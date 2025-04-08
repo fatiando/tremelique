@@ -36,21 +36,40 @@ There are different ways to install Tremelique:
 .. note::
 
     The commands above should be executed in a terminal. On Windows, use the
-    ``cmd.exe`` or the "Anaconda Prompt" app if you're using Anaconda.
+    ``cmd.exe`` or the "Anaconda Prompt"/"Miniforge Prompt" app if you're using
+    Anaconda/Miniforge.
+
+.. tip::
+
+   We recommend using the
+   `Miniforge distribution <https://conda-forge.org/download/>`__
+   to ensure that you have the ``conda`` package manager available.
+   Installing Miniforge does not require administrative rights to your computer
+   and doesn't interfere with any other Python installations in your system.
+   It's also much smaller than the Anaconda distribution and is less likely to
+   break when installing new software.
 
 Which Python?
 -------------
 
-You'll need **Python >= 3.8**.
+You'll need **Python 3.9 or greater**.
 See :ref:`python-versions` if you require support for older versions.
 
-.. _dependencies:
 
 Dependencies
 ------------
 
 The required dependencies should be installed automatically when you install
-Tremelique using ``conda`` or ``pip``.
+Bordado using ``conda`` or ``pip``. Optional dependencies have to be
+installed manually.
+
+.. note::
+
+    See :ref:`dependency-versions` for the our policy of oldest supported
+    versions of each dependency.
 
 Required:
 
+* `numpy <http://www.numpy.org/>`__
+* `numba <https://numba.pydata.org/>`__
+* `matplotlib <https://matplotlib.org/>`__

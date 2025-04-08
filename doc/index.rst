@@ -1,24 +1,24 @@
+.. title:: Home
 
 
 .. raw:: html
 
-    <h1 class="display-1">Tremelique</h1>
+   <h1 class="display-1">Tremelique</h1>
 
-.. raw:: html
+.. div:: sd-fs-3
 
-    <p class="sd-fs-3">
-    </p>
-
+    Educational 2D elastic wave simulator in Python
 
 
-----
+A paragraph about the project should go here.
+
 
 .. grid:: 1 2 1 2
     :margin: 5 5 0 0
     :padding: 0 0 0 0
     :gutter: 4
 
-    .. grid-item-card:: :octicon:`info` Getting started
+    .. grid-item-card:: :octicon:`rocket` Getting started
         :text-align: center
         :class-title: sd-fs-5
         :class-card: sd-p-3
@@ -26,7 +26,6 @@
         New to Tremelique? Start here!
 
         .. button-ref:: overview
-            :ref-type: ref
             :click-parent:
             :color: primary
             :outline:
@@ -37,7 +36,7 @@
         :class-title: sd-fs-5
         :class-card: sd-p-3
 
-        Ask on our community channels.
+        Ask on our community channels
 
         .. button-link:: https://www.fatiando.org/contact
             :click-parent:
@@ -45,17 +44,17 @@
             :outline:
             :expand:
 
-            Join the conversation :octicon:`link-external`
+             Join the conversation
 
     .. grid-item-card:: :octicon:`file-badge` Reference documentation
         :text-align: center
         :class-title: sd-fs-5
         :class-card: sd-p-3
 
-        A list of modules and functions.
+        A list of modules and functions
 
         .. button-ref:: api
-            :ref-type: ref
+            :click-parent:
             :color: primary
             :outline:
             :expand:
@@ -65,46 +64,46 @@
         :class-title: sd-fs-5
         :class-card: sd-p-3
 
-        Citations help support our work!
+        Citations help support our work
 
         .. button-ref:: citing
-            :ref-type: ref
+            :click-parent:
             :color: primary
             :outline:
             :expand:
 
-----
-
 .. seealso::
 
     Tremelique is a part of the
-    `Fatiando a Terra <https://www.fatiando.org/>`__ project.
+    `Fatiando a Terra <https://www.fatiando.org/>`_ project.
 
 .. toctree::
-    :maxdepth: 1
     :hidden:
+    :maxdepth: 1
     :caption: Getting Started
 
-    install.rst
     overview.rst
+    install.rst
 
 .. toctree::
     :maxdepth: 1
     :hidden:
-    :caption: Reference documentation
+    :caption: Reference Documentation
 
     api/index.rst
-    references.rst
+    citing.rst
     changes.rst
+    compatibility.rst
     versions.rst
+
 
 .. toctree::
     :maxdepth: 1
     :hidden:
     :caption: Community
 
-    Join the community <https://www.fatiando.org/contact/>
-    How to contribute <https://github.com/fatiando/tremelique/blob/master/CONTRIBUTING.md>
-    Code of Conduct <https://github.com/fatiando/tremelique/blob/master/CODE_OF_CONDUCT.md>
+    Join the community <http://contact.fatiando.org>
+    How to contribute <https://github.com/fatiando/tremelique/blob/main/CONTRIBUTING.md>
+    Code of Conduct <https://github.com/fatiando/tremelique/blob/main/CODE_OF_CONDUCT.md>
     Source code on GitHub <https://github.com/fatiando/tremelique>
     The Fatiando a Terra project <https://www.fatiando.org>

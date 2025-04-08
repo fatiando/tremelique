@@ -1,27 +1,26 @@
-# Copyright (c) 2024 The Tremelique Developers.
+# Copyright (c) 2025 The Tremelique Developers.
 # Distributed under the terms of the BSD 3-Clause License.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # This code is part of the Fatiando a Terra project (https://www.fatiando.org)
 #
 """
-Base class for 2D finite-difference simulations
+Base class for 2D finite-difference simulations.
 """
 
 import abc
+import base64
 import os
 import tempfile
 from tempfile import NamedTemporaryFile
-import base64
 
-import rich.progress
 import h5py
 import numpy as np
+import rich.progress
 from IPython.core.pylabtools import print_figure
-from IPython.display import Video, Image
+from IPython.display import Image, Video
 from ipywidgets import widgets
 from matplotlib import pyplot as plt
-
 
 
 def anim_to_html(anim, fps=6, dpi=30):
@@ -38,7 +37,9 @@ def anim_to_html(anim, fps=6, dpi=30):
     """
     plt.close(anim._fig)
     with NamedTemporaryFile(suffix=".mp4") as f:
-        anim.save(f.name, fps=fps, dpi=dpi, writer="ffmpeg", extra_args=["-vcodec", "libx264"])
+        anim.save(
+            f.name, fps=fps, dpi=dpi, writer="ffmpeg", extra_args=["-vcodec", "libx264"]
+        )
         with open(f.name, "rb") as f:
             video = f.read()
     return Video(

@@ -1,9 +1,13 @@
-# Copyright (c) 2024 The Tremelique Developers.
+# Copyright (c) 2025 The Tremelique Developers.
 # Distributed under the terms of the BSD 3-Clause License.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # This code is part of the Fatiando a Terra project (https://www.fatiando.org)
 #
+"""
+Class for acoustic wave simulation.
+"""
+
 import pickle
 
 import h5py
@@ -18,7 +22,6 @@ from ._utils import apply_damping
 
 
 class Acoustic(BaseSimulation):
-
     def __init__(
         self,
         velocity,

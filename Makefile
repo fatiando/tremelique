@@ -1,8 +1,9 @@
 # Build, package, test, and clean
 PROJECT=tremelique
-TESTDIR=tmp-test-dir-with-unique-name
-PYTEST_ARGS=--cov-config=../.coveragerc --cov-report=term-missing --cov=$(PROJECT) --doctest-modules -v --pyargs
-CHECK_STYLE=$(PROJECT) doc
+CHECK_STYLE=src/$(PROJECT) doc test
+GITHUB_ACTIONS=.github/workflows
+
+.PHONY: build install test format check check-format check_style check-actions clean
 
 help:
 	@echo "Commands:"
@@ -19,33 +20,30 @@ build:
 	python -m build .
 
 install:
-	python -m pip install --no-deps -e .
+	python -m pip install --no-deps --editable .
 
 test:
-	# Run a tmp folder to make sure the tests are run on the installed version
-	mkdir -p $(TESTDIR)
-	cd $(TESTDIR); MPLBACKEND='agg' pytest $(PYTEST_ARGS) $(PROJECT)
-	cp $(TESTDIR)/.coverage* .
-	rm -rvf $(TESTDIR)
+	pytest --cov-report=term-missing --cov=$(PROJECT) --doctest-modules --verbose test src/$(PROJECT)
 
 format:
-	isort $(CHECK_STYLE)
-	black $(CHECK_STYLE)
-	burocrata --extension=py $(PROJECT)
+	ruff check --select I --fix $(CHECK_STYLE) # fix isort errors
+	ruff format $(CHECK_STYLE)
+	burocrata --extension=py $(CHECK_STYLE)
 
-check: check-format check-style
+check: check-format check-style check-actions
 
 check-format:
-	black --check $(CHECK_STYLE)
-	isort --check $(CHECK_STYLE)
+	ruff format --check $(CHECK_STYLE)
 	burocrata --check --extension=py $(CHECK_STYLE)
 
 check-style:
-	flake8 $(CHECK_STYLE)
+	ruff check $(CHECK_STYLE)
+
+check-actions:
+	zizmor $(GITHUB_ACTIONS)
 
 clean:
 	find . -name "*.pyc" -exec rm -v {} \;
-	find . -name ".coverage.*" -exec rm -v {} \;
 	find . -name "*.orig" -exec rm -v {} \;
-	rm -rvf build dist MANIFEST *.egg-info __pycache__ .coverage .cache .pytest_cache
-	rm -rvf $(TESTDIR) dask-worker-space
+	find . -name ".coverage.*" -exec rm -v {} \;
+	rm -rvf build dist MANIFEST *.egg-info __pycache__ .coverage .cache .pytest_cache src/$(PROJECT)/_version.py
