@@ -96,13 +96,13 @@ def lame_lamb(pvel, svel, dens):
 
     Examples::
 
-        >>> print lame_lamb(2000, 1000, 2700)
+        >>> print(lame_lamb(2000, 1000, 2700))
         5400000000
         >>> import numpy as np
         >>> pv = np.array([2000, 3000])
         >>> sv = np.array([1000, 1700])
         >>> dens = np.array([2700, 3100])
-        >>> print lame_lamb(pv, sv, dens)
+        >>> print(lame_lamb(pv, sv, dens))
         [5400000000 9982000000]
 
     """
@@ -133,12 +133,12 @@ def lame_mu(svel, dens):
 
     Examples::
 
-        >>> print lame_mu(1000, 2700)
+        >>> print(lame_mu(1000, 2700))
         2700000000
         >>> import numpy as np
         >>> sv = np.array([1000, 1700])
         >>> dens = np.array([2700, 3100])
-        >>> print lame_mu(sv, dens)
+        >>> print(lame_mu(sv, dens))
         [2700000000 8959000000]
 
     """
