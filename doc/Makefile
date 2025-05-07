@@ -26,6 +26,7 @@ clean:
 	rm -rf $(BUILDDIR)/linkcheck
 	rm -rf api/generated
 	rm -rf .ipynb_checkpoints
+	rm -rf *.h5
 
 api:
 	@echo
