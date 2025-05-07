@@ -1,4 +1,5 @@
 # Requirements for running the tests
 pytest
 pytest-cov
-coverage[toml]
+coverage
+tomli
