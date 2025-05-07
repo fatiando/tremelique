@@ -8,14 +8,61 @@
 Misc utilities that don't fit anywhere else.
 """
 
+import base64
+import pathlib
+import tempfile
+
+import matplotlib.pyplot as plt
 import numba
 import numpy as np
+from IPython.display import Video
+
+
+def anim_to_html(anim, fps=6, dpi=30):
+    """
+    Convert a matplotlib animation to a video embedded in an HTML <video> tag.
+
+    Uses avconv (default) or ffmpeg. Both need to be installed on the system
+    for this to work.
+
+    Returns an IPython.display.HTML object for embedding in the notebook.
+
+    Adapted from `the yt project docs
+    <http://yt-project.org/doc/cookbook/embedded_webm_animation.html>`__.
+    """
+    plt.close(anim._fig)
+    with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as tmp:
+        temporary_file = pathlib.Path(tmp.name)
+    try:
+        anim.save(
+            temporary_file,
+            fps=fps,
+            dpi=dpi,
+            writer="ffmpeg",
+            extra_args=["-vcodec", "libx264"],
+        )
+        with temporary_file.open(mode="rb") as videofile:
+            video = videofile.read()
+    finally:
+        # Remove the file always, even if an exception occurred.
+        temporary_file.unlink()
+    return Video(
+        data=base64.b64encode(video).decode(),
+        embed=True,
+        mimetype="video/mp4",
+        width=800,
+        html_attributes="controls",
+    )
 
 
 @numba.jit(nopython=True)
 def apply_damping(array, nx, nz, pad, decay):
     """
     Apply a decay factor to the values of the array in the padding region.
+
+    The decay/damping is meant to slowly kill reflections off of the left,
+    right, and bottom of the domain. The decay is exponential and should use
+    a decay factor that is small to avoid causing unwanted reflections.
     """
     # Damping on the left
     for i in range(nz):
@@ -73,38 +120,44 @@ def xz2ps(ux, uz, p, s, nx, nz, dx, dz):
 
 def lame_lamb(pvel, svel, dens):
     r"""
-    Calculate the Lame parameter :math:`\lambda` P and S wave velocities
-    (:math:`\alpha` and :math:`\beta`) and the density (:math:`\rho`).
+    Calculate the Lame parameter :math:`\lambda`.
+
+    It's related to P and S wave velocities (:math:`\alpha` and :math:`\beta`)
+    and the density (:math:`\rho`).
 
     .. math::
 
         \lambda = \alpha^2 \rho - 2\beta^2 \rho
 
-    Parameters:
-
+    Parameters
+    ----------
     * pvel : float or array
-        The P wave velocity
+        The P wave velocity.
     * svel : float or array
-        The S wave velocity
+        The S wave velocity.
     * dens : float or array
-        The density
+        The density.
 
-    Returns:
-
+    Returns
+    -------
     * lambda : float or array
-        The Lame parameter
+        The Lame parameter.
 
-    Examples::
+    Examples
+    --------
+    Scalars can be used:
 
-        >>> print(lame_lamb(2000, 1000, 2700))
-        5400000000
-        >>> import numpy as np
-        >>> pv = np.array([2000, 3000])
-        >>> sv = np.array([1000, 1700])
-        >>> dens = np.array([2700, 3100])
-        >>> print(lame_lamb(pv, sv, dens))
-        [5400000000 9982000000]
+    >>> print(lame_lamb(2000, 1000, 2700))
+    5400000000
 
+    Or numpy arrays:
+
+    >>> import numpy as np
+    >>> pv = np.array([2000, 3000])
+    >>> sv = np.array([1000, 1700])
+    >>> dens = np.array([2700, 3100])
+    >>> print(lame_lamb(pv, sv, dens))
+    [5400000000 9982000000]
     """
     lamb = dens * pvel**2 - 2 * dens * svel**2
     return lamb
@@ -112,35 +165,41 @@ def lame_lamb(pvel, svel, dens):
 
 def lame_mu(svel, dens):
     r"""
-    Calculate the Lame parameter :math:`\mu` from S wave velocity
-    (:math:`\beta`) and the density (:math:`\rho`).
+    Calculate the Lame parameter :math:`\mu`.
+
+    It's related to S wave velocity (:math:`\beta`) and the density
+    (:math:`\rho`).
 
     .. math::
 
         \mu = \beta^2 \rho
 
-    Parameters:
-
+    Parameters
+    ----------
     * svel : float or array
-        The S wave velocity
+        The S wave velocity.
     * dens : float or array
-        The density
+        The density.
 
-    Returns:
-
+    Returns
+    -------
     * mu : float or array
-        The Lame parameter
+        The Lame parameter.
 
-    Examples::
+    Examples
+    --------
+    We can use scalars:
 
-        >>> print(lame_mu(1000, 2700))
-        2700000000
-        >>> import numpy as np
-        >>> sv = np.array([1000, 1700])
-        >>> dens = np.array([2700, 3100])
-        >>> print(lame_mu(sv, dens))
-        [2700000000 8959000000]
+    >>> print(lame_mu(1000, 2700))
+    2700000000
 
+    Or numpy arrays:
+
+    >>> import numpy as np
+    >>> sv = np.array([1000, 1700])
+    >>> dens = np.array([2700, 3100])
+    >>> print(lame_mu(sv, dens))
+    [2700000000 8959000000]
     """
     mu = dens * svel**2
     return mu
