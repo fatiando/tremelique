@@ -92,6 +92,7 @@ A paragraph about the project should go here.
 
     api/index.rst
     citing.rst
+    references.rst
     changes.rst
     compatibility.rst
     versions.rst

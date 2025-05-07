@@ -4,7 +4,7 @@ Version compatibility
 =====================
 
 Tremelique version compatibility
------------------------------
+--------------------------------
 
 Tremelique uses `semantic versioning <https://semver.org/>`__ (i.e.,
 ``MAJOR.MINOR.BUGFIX`` format).

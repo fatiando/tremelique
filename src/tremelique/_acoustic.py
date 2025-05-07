@@ -26,7 +26,7 @@ class Acoustic(BaseSimulation):
     Simulate the propagation of acoustic waves in 2D.
 
     Solves the pressure wave equation using the equivalent staggered grid
-    finite-difference method of [DiBarbolo2012]_. Uses a damping scheme to
+    finite-difference method of [DiBartolo2012]_. Uses a damping scheme to
     suppress reflections from the left, right, and bottom boundaries. The top
     boundary has a free-surface boundary condition.
     """
@@ -330,6 +330,9 @@ class Acoustic(BaseSimulation):
         return anim
 
     def maxdt(self):
+        """
+        Calculate the maximum allowed time interval that is safe to use.
+        """
         nz, nx = self.shape
         x1, x2, z1, z2 = [0, nx * self.dx, 0, nz * self.dz]
         spacing = min([(x2 - x1) / (nx - 1), (z2 - z1) / (nz - 1)])
