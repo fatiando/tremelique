@@ -1,9 +1,13 @@
-# Copyright (c) 2024 The Tremelique Developers.
+# Copyright (c) 2025 The Tremelique Developers.
 # Distributed under the terms of the BSD 3-Clause License.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # This code is part of the Fatiando a Terra project (https://www.fatiando.org)
 #
+"""
+Class for acoustic wave simulation.
+"""
+
 import pickle
 
 import h5py
@@ -13,11 +17,19 @@ from matplotlib import animation
 from matplotlib import pyplot as plt
 from numpy import sqrt
 
-from ._base import BaseSimulation, anim_to_html
-from ._utils import apply_damping
+from ._base import BaseSimulation
+from ._utils import anim_to_html, apply_damping
 
 
 class Acoustic(BaseSimulation):
+    """
+    Simulate the propagation of acoustic waves in 2D.
+
+    Solves the pressure wave equation using the equivalent staggered grid
+    finite-difference method of [DiBartolo2012]_. Uses a damping scheme to
+    suppress reflections from the left, right, and bottom boundaries. The top
+    boundary has a free-surface boundary condition.
+    """
 
     def __init__(
         self,
@@ -42,14 +54,15 @@ class Acoustic(BaseSimulation):
         """
         Get an iteration of the panels object from the hdf5 cache file.
 
-        Parameters:
+        Parameters
+        ----------
+        * index: index or slice
+            Index for slicing hdf5 data set.
 
-        * index: index or slicing
-            index for slicing hdf5 data set
-
-        Returns:
-
-        * panels object : 2D panels object at index
+        Returns
+        -------
+        * panels : array
+            Numpy array with the 2D panels at the given index.
 
         """
         with self._get_cache() as f:
@@ -59,13 +72,19 @@ class Acoustic(BaseSimulation):
     @staticmethod
     def from_cache(fname, verbose=True):
         """
-        Creates a simulation object from a pre-existing HDF5 file
+        Create a simulation object from a pre-existing HDF5 file.
 
+        Parameters
+        ----------
         * fname: str
             HDF5 file path containing a previous simulation stored
-
         * verbose: bool
             Progress status shown or not
+
+        Returns
+        -------
+        * simulation : :class:`tremelique.Acoustic`
+            The simulation class instance.
         """
         with h5py.File(fname, "r") as f:
             vel = f["velocity"]
@@ -93,8 +112,10 @@ class Acoustic(BaseSimulation):
 
     def _init_cache(self, npanels, chunks=None, compression="lzf", shuffle=True):
         """
-        Init the hdf5 cache file with this simulation parameters
+        Initialize the hdf5 cache file with this simulation parameters.
 
+        Parameters
+        ----------
         * npanels: int
             number of 2D panels needed for this simulation run
         *  chunks : HDF5 data set option
@@ -135,9 +156,10 @@ class Acoustic(BaseSimulation):
 
     def _expand_cache(self, npanels):
         """
-        Expand the hdf5 cache file of this simulation parameters
-        for more iterations
+        Expand the hdf5 cache for more iterations.
 
+        Parameters
+        ----------
         *  npanels: int
             number of 2D panels needed for this simulation run
         """
@@ -147,11 +169,10 @@ class Acoustic(BaseSimulation):
 
     def _cache_panels(self, u, tp1, iteration, simul_size):
         """
-        Save the last calculated panels and information about it
-        in the hdf5 cache file
+        Save the last calculated panels to the hdf5 cache.
 
-        Parameters:
-
+        Parameters
+        ----------
         * panels : tuple or variable
             tuple or variable containing all 2D panels needed for
             this simulation
@@ -174,10 +195,11 @@ class Acoustic(BaseSimulation):
     def _init_panels(self):
         """
         Start the simulation panels used for finite difference solution.
+
         Keep consistency of simulations if loaded from file.
 
-        Returns:
-
+        Returns
+        -------
         * return:
             panels object
 
@@ -194,22 +216,25 @@ class Acoustic(BaseSimulation):
         return u
 
     def add_point_source(self, position, wavelet):
-        """ "
-        Adds a point source to this simulation
+        """
+        Add a point source of energy to this simulation.
 
-        Parameters:
-
+        Parameters
+        ----------
         * position : tuple
             The (x, z) coordinates of the source
         * source : source function
             (see :class:`~fatiando.seismic.wavefd.Ricker` for an
             example source)
-
         """
         self.sources.append([position, wavelet])
 
     def _timestep(self, u, tm1, t, tp1, iteration):
+        """
+        Take a step in the finite-difference simulation.
+        """
         nz, nx = self.shape
+        # Take the step
         timestep_esg(
             u[tp1],
             u[t],
@@ -224,17 +249,22 @@ class Acoustic(BaseSimulation):
             self.velocity,
             self.density,
         )
+        # Apply boundary conditions and damping
         apply_damping(u[t], nx, nz, self.padding, self.taper)
         nonreflexive_bc(
             u[tp1], u[t], nx, nz, self.dt, self.dx, self.dz, self.velocity, self.density
         )
         apply_damping(u[tp1], nx, nz, self.padding, self.taper)
+        # Update the wave sources
         for pos, src in self.sources:
             i, j = pos
             scale = -self.density[i, j] * (self.velocity[i, j] * self.dt) ** 2
             u[tp1, i, j] += scale * src(iteration * self.dt)
 
     def _plot_snapshot(self, frame, **kwargs):
+        """
+        Plot a given frame as an image.
+        """
         with h5py.File(self.cachefile) as f:
             data = f["panels"][frame]
         scale = kwargs.pop("cutoff", np.abs(data).max())
@@ -256,23 +286,10 @@ class Acoustic(BaseSimulation):
         embed=False,
         fps=10,
         dpi=70,
-        writer="ffmpeg",
         **kwargs,
     ):
         """
-        Creates a 2D animation from all the simulation iterations
-        that has been run.
-
-        * every : int
-
-        * cutoff : int
-
-        * ax : int
-
-        * cmap : int
-
-        * embed:
-
+        Create a 2D animation from the current state of the simulation.
         """
         if ax is None:
             plt.figure(facecolor="white")
@@ -291,7 +308,7 @@ class Acoustic(BaseSimulation):
             width = height * aspect * 1.5
         fig.set_size_inches(width, height)
         # Separate the arguments for imshow
-        imshow_args = dict(cmap=cmap)
+        imshow_args = {"cmap": cmap}
         if cutoff is not None:
             imshow_args["vmin"] = -cutoff
             imshow_args["vmax"] = cutoff
@@ -301,7 +318,7 @@ class Acoustic(BaseSimulation):
         frames = self.simsize // every
 
         def plot(i):
-            ax.set_title("iteration: {:d}".format(i * every))
+            ax.set_title(f"iteration: {i * every:d}")
             u = self[i * every]
             wavefield.set_array(u)
             return wavefield
@@ -309,11 +326,13 @@ class Acoustic(BaseSimulation):
         anim = animation.FuncAnimation(fig, plot, frames=frames, **kwargs)
         if embed:
             return anim_to_html(anim, fps=fps, dpi=dpi)
-        else:
-            plt.show()
-            return anim
+        plt.show()
+        return anim
 
     def maxdt(self):
+        """
+        Calculate the maximum allowed time interval that is safe to use.
+        """
         nz, nx = self.shape
         x1, x2, z1, z2 = [0, nx * self.dx, 0, nz * self.dz]
         spacing = min([(x2 - x1) / (nx - 1), (z2 - z1) / (nz - 1)])
@@ -322,12 +341,12 @@ class Acoustic(BaseSimulation):
 
 
 @numba.jit(nopython=True)
-def timestep_esg(  # noqa: CFQ002
-    u_tp1, u_t, u_tm1, x1, x2, z1, z2, dt, dx, dz, vel, dens
-):
+def timestep_esg(u_tp1, u_t, u_tm1, x1, x2, z1, z2, dt, dx, dz, vel, dens):
     """
-    Perform a single time step in the Finite Difference solution for elastic
-    SH waves using the Equivalent Staggered Grid method.
+    Perform a single time step in the finite-difference solution.
+
+    Updates the pressure (u) from the pressure at the previous 2 times using
+    the equivalent staggered grid method [DiBartolo2012]_.
     """
     dt2 = dt**2
     dx2 = dx**2
@@ -430,11 +449,12 @@ def nonreflexive_bc(u_tp1, u_t, nx, nz, dt, dx, dz, mu, dens):
 
 def scalar_maxdt(area, shape, maxvel):
     r"""
-    Calculate the maximum time step that can be used in the
-    FD scalar simulation with 4th order space 1st time backward.
+    Calculate the maximum time step that can be used safely.
+
+    This is derived for a simulation with 4th order space and 1st order time.
 
     References
-
+    ----------
     Alford R.M., Kelly K.R., Boore D.M. (1974) Accuracy of finite-difference
     modeling of the acoustic wave equation Geophysics, 39 (6), P. 834-842
 
@@ -450,10 +470,10 @@ def scalar_maxdt(area, shape, maxvel):
          |w_a^2|)}}
          = \frac{ \Delta s \sqrt{3}}{ V_{max} \sqrt{8}}
 
-    Where w_a are the centered differences weights
+    Where :math:`w_a` are the centered differences weights.
 
-    Parameters:
-
+    Parameters
+    ----------
     * area : [xmin, xmax, zmin, zmax]
         The x, z limits of the simulation area, e.g., the shallowest point is
         at zmin, the deepest at zmax.
@@ -462,11 +482,10 @@ def scalar_maxdt(area, shape, maxvel):
     * maxvel : float
         The maximum velocity in the medium
 
-    Returns:
-
+    Returns
+    -------
     * maxdt : float
         The maximum time step
-
     """
     x1, x2, z1, z2 = area
     nz, nx = shape

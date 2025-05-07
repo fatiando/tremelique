@@ -18,3 +18,4 @@ Overview
     pwave.add_point_source((0, shape[1]//2), tr.RickerWavelet(1, 60))
     pwave.run(300)
     pwave.animate(every=10, embed=True, dpi=50, cutoff=0.5)
+

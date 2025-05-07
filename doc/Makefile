@@ -25,10 +25,8 @@ clean:
 	rm -rf $(BUILDDIR)/doctrees
 	rm -rf $(BUILDDIR)/linkcheck
 	rm -rf api/generated
-	rm -rf gallery
-	rm -rf tutorials
-	rm -rf sample_data
 	rm -rf .ipynb_checkpoints
+	rm -rf *.h5
 
 api:
 	@echo

@@ -13,18 +13,22 @@ span.project-version {
   margin-bottom: 4rem;
 }
 
-/* Disable the sphinx-gallery download note at the top */
-.sphx-glr-download-link-note {
-  display: none;
+/* Try to make the jupyter-sphinx style match sphinx-gallery for consistency */
+div.jupyter_container {
+  border: none;
+  box-shadow: none;
 }
 
-.sphx-glr-timing {
-  border-top: 1px solid #dddddd;
-  padding: 1.8rem 0;
+div.jupyter_container .cell_input {
+  margin-bottom: 1.15rem;
+  border-radius: 0.4em;
+  box-shadow: 1px 1px 1px #d8d8d8;
 }
 
-/* Add some margins around jupyter-sphinx outputs */
-.cell_output {
-  margin-top: 1em;
-  margin-bottom: 1em;
+div.jupyter_container .cell_output {
+  margin-bottom: 1.15rem;
+}
+
+.jupyter_container div.code_cell pre {
+  padding: 10px;
 }

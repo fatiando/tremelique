@@ -1,60 +1,32 @@
-# Copyright (c) 2024 The Tremelique Developers.
+# Copyright (c) 2025 The Tremelique Developers.
 # Distributed under the terms of the BSD 3-Clause License.
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # This code is part of the Fatiando a Terra project (https://www.fatiando.org)
 #
 """
-Base class for 2D finite-difference simulations
+Base class for 2D finite-difference simulations.
 """
 
 import abc
+import contextlib
 import os
 import tempfile
-from tempfile import NamedTemporaryFile
-import base64
 
-import rich.progress
 import h5py
+import matplotlib.pyplot as plt
 import numpy as np
+import rich.progress
 from IPython.core.pylabtools import print_figure
-from IPython.display import Video, Image
+from IPython.display import Image
 from ipywidgets import widgets
-from matplotlib import pyplot as plt
-
-
-
-def anim_to_html(anim, fps=6, dpi=30):
-    """
-    Convert a matplotlib animation object to a video embedded in an HTML
-    <video> tag.
-
-    Uses avconv (default) or ffmpeg.
-
-    Returns an IPython.display.HTML object for embedding in the notebook.
-
-    Adapted from `the yt project docs
-    <http://yt-project.org/doc/cookbook/embedded_webm_animation.html>`__.
-    """
-    plt.close(anim._fig)
-    with NamedTemporaryFile(suffix=".mp4") as f:
-        anim.save(f.name, fps=fps, dpi=dpi, writer="ffmpeg", extra_args=["-vcodec", "libx264"])
-        with open(f.name, "rb") as f:
-            video = f.read()
-    return Video(
-        data=base64.b64encode(video).decode(),
-        embed=True,
-        mimetype="video/mp4",
-        width=800,
-        html_attributes="controls",
-    )
 
 
 class BaseSimulation(abc.ABC):
     """
-    Base class for 2D simulations.
+    Base class for 2D finite-difference seismic wave simulations.
 
-    Implements the ``run`` method and delegates actual timestepping to the
+    Implements the ``run`` method and delegates actual time stepping to the
     abstract ``_timestep`` method.
 
     Handles creating an HDF5 cache file, plotting snapshots of the simulation,
@@ -65,14 +37,14 @@ class BaseSimulation(abc.ABC):
     indexing the HDF5 cache file. This way you can treat the simulation
     object as a numpy array.
 
-    Attributes:
-
+    Attributes
+    ----------
     * simsize: int
-        number of iterations that has been run
+        Number of iterations that has been run.
     * cachefile: str
-        The hdf5 cachefile file path where the simulation is stored
+        The hdf5 cachefile file path where the simulation is stored.
     * shape: tuple
-        2D panel numpy.shape without padding
+        2D panel numpy.shape without padding.
 
     """
 
@@ -101,23 +73,22 @@ class BaseSimulation(abc.ABC):
 
     def _create_tmp_cache(self):
         """
-        Creates the temporary file used
-        to store data in hdf5 format
+        Create the temporary file used to store data in hdf5 format.
 
-        Returns:
-
+        Returns
+        -------
         * _create_tmp_cache: str
-            returns the name of the file created
+            The name of the file created.
 
         """
-        tmpfile = tempfile.NamedTemporaryFile(
-            suffix=".h5",
-            prefix="{}-".format(self.__class__.__name__),
-            dir=os.path.curdir,
-            delete=False,
-        )
-        fname = tmpfile.name
-        tmpfile.close()
+        tmp_args = {
+            "suffix": ".h5",
+            "prefix": f"{self.__class__.__name__}-",
+            "dir": os.path.curdir,
+            "delete": False,
+        }
+        with tempfile.NamedTemporaryFile(**tmp_args) as tmpfile:
+            fname = tmpfile.name
         return fname
 
     @abc.abstractmethod
@@ -142,67 +113,64 @@ class BaseSimulation(abc.ABC):
 
     def _get_cache(self, mode="r"):
         """
-        Get the cache file as h5py file object
+        Get the cache file as h5py file object.
 
-        Parameters:
-
+        Parameters
+        ----------
         * mode: str
-            'r' or 'w'
-            for reading or writing
+            'r' or 'w' for reading or writing.
 
-        Returns:
-
-        * cache : h5py file object
-
+        Returns
+        -------
+        * cache : :class:`h5py.File`
+            The open HDF5 file object for the cache.
         """
         return h5py.File(self.cachefile, mode)
 
+    @abc.abstractmethod
     def __getitem__(self, index):
         """
         Get an iteration of the panels object from the hdf5 cache file.
         """
-        pass
 
     @abc.abstractmethod
     def _plot_snapshot(self, frame, **kwargs):
-        pass
+        """
+        Plot a given frame as an image.
+        """
 
     def snapshot(self, frame, embed=False, raw=False, ax=None, **kwargs):
         """
-        Returns an image (snapshot) of the 2D wavefield simulation
-        at a desired iteration number (frame) or just plot it.
+        Create an image of the 2D wavefield simulation at given frame.
 
-        Parameters:
+        The image can be returned as a raw PNG or embedded into an
+        :class:`IPython.display.Image`.
 
+        Parameters
+        ----------
         * frame : int
-            The time step iteration number
+            The time step iteration number.
         * embed : bool
-            True to plot it inline
+            True to plot it inline.
         * raw : bool
-            True for raw byte image
+            True for raw byte image.
         * ax : None or matplotlib Axes
-            If not None, will assume this is a matplotlib Axes
-            and make the plot on it.
+            If not None, will assume this is a matplotlib Axes and make the
+            plot on it.
 
-        Returns:
-
-        * image:
-            raw byte image if raw=True
-            jpeg picture if embed=True
-            or None
-
+        Returns
+        -------
+        * image : bytes-array or :class:`IPython.display.Image` or None
+            Raw byte image if ``raw=True`` PNG picture if ``embed=True`` or
+            None.
         """
         if ax is None:
             fig = plt.figure(facecolor="white")
             ax = plt.subplot(111)
-        if frame < 0:
-            title = self.simsize + frame
-        else:
-            title = frame
-        # plt.sca(ax)
+        title = self.simsize + frame if frame < 0 else frame
         ax = plt.gca()
         fig = ax.get_figure()
-        plt.title("Time frame {:d}".format(title))
+        plt.title(f"Time frame {title:d}")
         self._plot_snapshot(frame, **kwargs)
         nz, nx = self.shape
         mx, mz = nx * self.dx, nz * self.dz
@@ -213,10 +181,8 @@ class BaseSimulation(abc.ABC):
         ax.invert_yaxis()
         # Check the aspect ratio of the plot and adjust figure size to match
         aspect = min(self.shape) / max(self.shape)
-        try:
+        with contextlib.suppress(TypeError):
             aspect /= ax.get_aspect()
-        except TypeError:
-            pass
         if nx > nz:
             width = 10
             height = width * aspect * 0.8
@@ -230,12 +196,13 @@ class BaseSimulation(abc.ABC):
             plt.close(fig)
         if raw:
             return png
-        elif embed:
+        if embed:
             return Image(png)
+        return None
 
     def _repr_png_(self):
         """
-        Display one time frame of this simulation
+        Display one time frame of this simulation.
         """
         return self.snapshot(-1, raw=True)
 
@@ -265,20 +232,23 @@ class BaseSimulation(abc.ABC):
 
     @abc.abstractmethod
     def _timestep(self, panels, tm1, t, tp1, iteration):
-        pass
+        """
+        Run the simulation forward one step in time.
+        """
 
     def run(self, iterations):
         """
         Run this simulation given the number of iterations.
 
+        Parameters
+        ----------
         * iterations: int
-            number of time step iterations to run
+            Number of time step iterations to run.
         """
-        # Calls the following abstract methods:
-        # `_init_cache`, `_expand_cache`, `_init_panels`
-        # and `_cache_panels` and  `_time_step`
+        # Calls the following abstract methods: `_init_cache`, `_expand_cache`,
+        # `_init_panels` and `_cache_panels` and  `_time_step`. All of them
+        # must be implemented in the child classes.
         nz, nx = self.shape
-        dz, dx = self.dz, self.dx
         u = self._init_panels()  # panels must be created first
 
         # Initialize the cache on the first run
