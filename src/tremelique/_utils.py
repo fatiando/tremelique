@@ -153,11 +153,11 @@ def lame_lamb(pvel, svel, dens):
     Or numpy arrays:
 
     >>> import numpy as np
-    >>> pv = np.array([2000, 3000])
-    >>> sv = np.array([1000, 1700])
-    >>> dens = np.array([2700, 3100])
+    >>> pv = np.array([2000., 3000.])
+    >>> sv = np.array([1000., 1700.])
+    >>> dens = np.array([2700., 3100.])
     >>> print(lame_lamb(pv, sv, dens))
-    [5400000000 9982000000]
+    [5.400e+09 9.982e+09]
     """
     lamb = dens * pvel**2 - 2 * dens * svel**2
     return lamb
@@ -196,10 +196,10 @@ def lame_mu(svel, dens):
     Or numpy arrays:
 
     >>> import numpy as np
-    >>> sv = np.array([1000, 1700])
-    >>> dens = np.array([2700, 3100])
+    >>> sv = np.array([1000., 1700.])
+    >>> dens = np.array([2700., 3100.])
     >>> print(lame_mu(sv, dens))
-    [2700000000 8959000000]
+    [2.700e+09 8.959e+09]
     """
     mu = dens * svel**2
     return mu
