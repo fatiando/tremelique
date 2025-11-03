@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 import numba
 import numpy as np
 from IPython.display import Video
+import xarray as xr
+
 
 
 def anim_to_html(anim, fps=6, dpi=30):
@@ -203,3 +205,43 @@ def lame_mu(svel, dens):
     """
     mu = dens * svel**2
     return mu
+
+def create_homogeneous_model(shape, properties):
+    """
+    Cria um modelo homenegeo com NumPy
+    """
+    model_arrays = {}
+    for prop_name, prop_value in properties.items():
+        model_arrays[prop_name] = np.full(shape, prop_value, dtype=np.float32)
+    return model_arrays
+
+
+def create_homogeneus_model_zarr(region, shape, properties):
+    """
+    Cria um modelo homegeneo com Xarray
+    region: delimitação fisica (xmin, xmax, zmin, zmax) -> z é positivo quando para baixo
+    shape: numero de pontos no grid
+    properties: dicionario com as propriedades físicas e seus valores
+    ex properties: {"velocity":1500, "density":1000}
+    
+    Returns: 
+    model:: xarray_Dataset (dataset com coordenadas de 'z' e 'x')
+    """
+
+    nz, nx = shape
+    xmin, xmax, zmin, zmax = region
+
+    z_coords = np.linspace(zmin, zmax, nz, dtype="float16")
+    x_coords = np.linspace(xmin, xmax, nx, dtype="float16")
+
+    model_grids = {}
+
+    for prop_name, prop_value in properties.items():
+        data_array = np.full(shape, prop_value, dtype="float16")
+        grid = xr.DataArray(
+            data = data_array,
+            coords = {"z": z_coords, "x": x_coords},
+            dims = {"z","x"},
+            name = prop_name
+        )
+        model_grids[prop_name] = grid

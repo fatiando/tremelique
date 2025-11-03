@@ -17,8 +17,8 @@ from matplotlib import animation
 from matplotlib import pyplot as plt
 from numpy import sqrt
 
-from ._base import BaseSimulation
-from ._utils import anim_to_html, apply_damping
+from _base import BaseSimulation #alterado
+from _utils import anim_to_html, apply_damping #alterado
 
 
 class Acoustic(BaseSimulation):
