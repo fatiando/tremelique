@@ -231,17 +231,23 @@ def create_homogeneus_model_zarr(region, shape, properties):
     nz, nx = shape
     xmin, xmax, zmin, zmax = region
 
-    z_coords = np.linspace(zmin, zmax, nz, dtype="float16")
-    x_coords = np.linspace(xmin, xmax, nx, dtype="float16")
+    z_coords = np.linspace(zmin, zmax, nz, dtype="float32")
+    x_coords = np.linspace(xmin, xmax, nx, dtype="float32")
 
+    dz = (z_coords[1] - z_coords[0])
+    dx = (x_coords[1] - z_coords[0])
     model_grids = {}
 
-    for prop_name, prop_value in properties.items():
-        data_array = np.full(shape, prop_value, dtype="float16")
-        grid = xr.DataArray(
+    for name, value in properties.items():
+        data_array = np.full(shape, value, dtype="float32")
+        model_grids[name] = xr.DataArray(
             data = data_array,
             coords = {"z": z_coords, "x": x_coords},
             dims = {"z","x"},
-            name = prop_name
+            name = name
         )
-        model_grids[prop_name] = grid
+    
+    model_dataset = xr.Dataset(model_grids)
+    model_dataset.attrs["dz"] = float(dz)
+    model_dataset.attrs["dx"] = float(dx)
+    return model_dataset
