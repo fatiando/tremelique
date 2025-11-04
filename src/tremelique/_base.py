@@ -17,6 +17,7 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import rich.progress
+import atexit
 from IPython.core.pylabtools import print_figure
 from IPython.display import Image
 from ipywidgets import widgets
@@ -64,12 +65,33 @@ class BaseSimulation(abc.ABC):
         # it is the `run` iteration time step indexer
         self.it = -1  # iteration time step index (where we are)
         # `it` and `simsize` together allows indefinite simulation runs
+        
         if cachefile is None:
             cachefile = self._create_tmp_cache()
+            self._temp_cache = True
+        else:
+            self._temp_cache = False
         self.cachefile = cachefile
         self.padding = padding  # padding region size
         self.taper = taper
         self.dt = dt
+
+        atexit.register(self._delete_tmp_cache)
+
+    def _delete_tmp_cache(self):
+        """
+        Clears the temporary cache file when the object is destroyed.
+        """
+        if getattr(self, "_temp_cache") and os.path.exists(self.cachefile):
+            try:
+                os.remove(self.cachefile)
+            except FileNotFoundError:
+                pass
+            except Exception as e:
+                print(f"Error! Failed to delete temporary file {self.cachefile}: {e}.")
+
+    def __del__(self):
+        self._delete_tmp_cache()
 
     def _create_tmp_cache(self):
         """
@@ -269,3 +291,4 @@ class BaseSimulation(abc.ABC):
             self.simsize += 1
             #  won't this make it slower than it should? I/O
             self._cache_panels(u, tp1, self.it, self.simsize)
+        
