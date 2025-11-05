@@ -90,8 +90,6 @@ class BaseSimulation(abc.ABC):
             except Exception as e:
                 print(f"Error! Failed to delete temporary file {self.cachefile}: {e}.")
 
-    def __del__(self):
-        self._delete_tmp_cache()
 
     def _create_tmp_cache(self):
         """

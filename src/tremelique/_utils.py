@@ -17,6 +17,7 @@ import numba
 import numpy as np
 from IPython.display import Video
 import xarray as xr
+import bordado as bd
 
 
 
@@ -216,7 +217,7 @@ def create_homogeneous_model(shape, properties):
     return model_arrays
 
 
-def create_homogeneus_model_zarr(region, shape, properties):
+def create_homogeneus_model_xarray(region, shape, properties):
     """
     Cria um modelo homegeneo com Xarray
     region: delimitação fisica (xmin, xmax, zmin, zmax) -> z é positivo quando para baixo
@@ -231,11 +232,11 @@ def create_homogeneus_model_zarr(region, shape, properties):
     nz, nx = shape
     xmin, xmax, zmin, zmax = region
 
-    z_coords = np.linspace(zmin, zmax, nz, dtype="float32")
-    x_coords = np.linspace(xmin, xmax, nx, dtype="float32")
+    z_coords = bd.line_coordinates(zmin, zmax, size=nz)
+    x_coords = bd.line_coordinates(xmin, xmax, size=nx)
 
-    dz = (z_coords[1] - z_coords[0])
-    dx = (x_coords[1] - z_coords[0])
+    dz = z_coords[1] - z_coords[0]
+    dx = x_coords[1] - x_coords[0]
     model_grids = {}
 
     for name, value in properties.items():
