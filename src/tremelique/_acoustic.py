@@ -351,7 +351,7 @@ class Acoustic(BaseSimulation):
         return 0.6 * 0.606 * spacing / self.velocity.max()
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, parallel=True)
 def timestep_esg(u_tp1, u_t, u_tm1, x1, x2, z1, z2, dt, dx, dz, vel, dens):
     """
     Perform a single time step in the finite-difference solution.

@@ -332,6 +332,11 @@ class AcousticXarray(BaseSimulation):
             width = height * aspect * 1.5
         fig.set_size_inches(width, height)
         # Separate the arguments for imshow
+
+        ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
+        panels = ds["panels"] #DataArray
+        frames = panels.shape[0]//every #shape[0] == self.simsize
+
         imshow_args = {"cmap": cmap}
         if cutoff is not None:
             imshow_args["vmin"] = -cutoff
@@ -339,15 +344,16 @@ class AcousticXarray(BaseSimulation):
         wavefield = ax.imshow(np.zeros(self.shape), **imshow_args)
         fig.colorbar(wavefield, pad=0, aspect=30).set_label("Pressure")
         ax.set_title("iteration: 0")
-        frames = self.simsize // every
+        
 
         def plot(i):
             ax.set_title(f"iteration: {i * every:d}")
-            u = self[i * every]
+            u = panels[i*every, :, :].values
             wavefield.set_array(u)
             return wavefield
 
         anim = animation.FuncAnimation(fig, plot, frames=frames, **kwargs)
+        
         if embed:
             return anim_to_html(anim, fps=fps, dpi=dpi)
         plt.show()
@@ -364,7 +370,7 @@ class AcousticXarray(BaseSimulation):
         return 0.6 * 0.606 * spacing / self.velocity.max()
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, parallel=True)
 def timestep_esg(u_tp1, u_t, u_tm1, x1, x2, z1, z2, dt, dx, dz, vel, dens):
     """
     Perform a single time step in the finite-difference solution.
