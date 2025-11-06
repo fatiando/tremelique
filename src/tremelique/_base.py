@@ -78,8 +78,7 @@ class BaseSimulation(abc.ABC):
         self.taper = taper
         self.dt = dt
 
-        atexit.register(self._delete_tmp_cache)
-
+    @atexit.register
     def _delete_tmp_cache(self):
         """
         Clears the temporary cache file when the object is destroyed.

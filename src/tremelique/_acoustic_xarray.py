@@ -57,6 +57,11 @@ class AcousticXarray(BaseSimulation):
         if self.dt is None:
             self.dt = self.maxdt()
 
+    @property
+    def wavefield(self):
+        return xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
+        
+
     def __getitem__(self, index):
         """
         Get an iteration of the panels object from the hdf5 cache file.
@@ -334,8 +339,8 @@ class AcousticXarray(BaseSimulation):
         # Separate the arguments for imshow
 
         ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
-        panels = ds["panels"] #DataArray
-        frames = panels.shape[0]//every #shape[0] == self.simsize
+        #panels = ds["panels"] #DataArray
+        frames = ds["panels"].shape[0]//every #shape[0] == self.simsize
 
         imshow_args = {"cmap": cmap}
         if cutoff is not None:
@@ -348,7 +353,7 @@ class AcousticXarray(BaseSimulation):
 
         def plot(i):
             ax.set_title(f"iteration: {i * every:d}")
-            u = panels[i*every, :, :].values
+            u = ds["panels"][i*every, :, :].values
             wavefield.set_array(u)
             return wavefield
 
