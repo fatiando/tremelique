@@ -13,17 +13,17 @@ import pickle
 import h5py
 import numba
 import numpy as np
-import bordado as bd
 import xarray as xr
 
 from matplotlib import animation
 from matplotlib import pyplot as plt
 from numpy import sqrt
 
-from _base import BaseSimulation #alterado
-from _utils import anim_to_html, apply_damping #alterado
+from _storage import open_store
+from _base import BaseSimulation 
+from _utils import anim_to_html, apply_damping 
 
-class Acoustic_Xarray(BaseSimulation):
+class AcousticXarray(BaseSimulation):
     """
     Simulate the propagation of acoustic waves in 2D.
 
@@ -35,34 +35,25 @@ class Acoustic_Xarray(BaseSimulation):
 
     def __init__(
         self,
-        model_xarray,
+        model,
+        cachefile=None,
         dt=None,
         padding=50,
         taper=0.005,
         verbose=True,
     ):
-    
-        #Definir a largura de padding para cada lado de cada dimensão
-        # 'z': "0" por estar no topo?, "padding" para baixo
-        # 'x': "padding" para esquerda, "padding" para direita
-        pad_width = {"z": (0, padding), "x": (padding, padding)}
-        velocity_pad = bd.pad_region(model_xarray.velocity,pad_width)
+        self.model = model
+        self.velocity = model["velocity"].values
+        self.density = model["density"].values
 
-        dz = model_xarray.attrs["dz"]
-        dx = model_xarray.attrs["dx"]
-        spacing = (dz, dx)
+        dx = model.attrs.get("dx", 1.0) #se dx não existir dx = 1.0
+        dz = model.attrs.get("dz", 1.0) #se dz não existir dz = 1.0
+        spacing = (dx, dz)
 
         super().__init__(
-            cachefile=None,
-            spacing=spacing, 
-            #shape=velocity.shape, 
-            dt=dt, 
-            padding=padding, 
-            taper=taper, 
-            verbose=verbose
+            cachefile, spacing, self.velocity.shape, dt, padding, taper, verbose
         )
-        "self.density = density"
-        "self.velocity = velocity"
+    
         if self.dt is None:
             self.dt = self.maxdt()
 
@@ -102,27 +93,41 @@ class Acoustic_Xarray(BaseSimulation):
         * simulation : :class:`tremelique.Acoustic`
             The simulation class instance.
         """
-        with h5py.File(fname, "r") as f:
-            vel = f["velocity"]
+        with open_store(fname, "r") as f:
+            vel= f["velocity"]
             dens = f["density"]
             panels = f["panels"]
+            
             dx = panels.attrs["dx"]
             dz = panels.attrs["dz"]
             dt = panels.attrs["dt"]
             padding = panels.attrs["padding"]
             taper = panels.attrs["taper"]
-            sim = Acoustic(
-                vel[:],
-                dens[:],
-                (dx, dz),
+                
+            model = xr.Dataset(
+                data_vars={"velocity": (["z", "x"], vel),
+                           "density": (["z", "x"], dens)
+                }, 
+                attrs={"dx": dx, "dz": dz}
+            )
+
+            sim = AcousticXarray(
+                model,
+                cachefile=fname,
                 dt=dt,
                 padding=padding,
                 taper=taper,
-                cachefile=fname,
+                verbose=verbose,
             )
             sim.simsize = panels.attrs["simsize"]
             sim.it = panels.attrs["iteration"]
-            sim.sources = pickle.loads(f["sources"].value.tostring())
+
+            data = f["sources"][()]
+            if isinstance(data, bytes):
+                sim.sources = pickle.loads(data)
+            else:
+                sim.sources = pickle.loads(data.tobytes())
+        
         sim.set_verbose(verbose)
         return sim
 
@@ -281,15 +286,18 @@ class Acoustic_Xarray(BaseSimulation):
         """
         Plot a given frame as an image.
         """
-        with h5py.File(self.cachefile) as f:
+        with self._get_cache("r") as f:
             data = f["panels"][frame]
+
         scale = kwargs.pop("cutoff", np.abs(data).max())
         nz, nx = self.shape
         dx, dz = nx * self.dx, nz * self.dz
+
         if "extent" not in kwargs:
             kwargs["extent"] = [0, dx, dz, 0]
         if "cmap" not in kwargs:
             kwargs["cmap"] = plt.cm.seismic
+            
         plt.imshow(data, vmin=-scale, vmax=scale, **kwargs)
         plt.colorbar(pad=0, aspect=30).set_label("Pressure")
 

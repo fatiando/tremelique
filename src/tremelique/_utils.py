@@ -217,7 +217,7 @@ def create_homogeneous_model(shape, properties):
     return model_arrays
 
 
-def create_homogeneus_model_xarray(region, shape, properties):
+def homogeneous_model_xarray(region, shape, properties):
     """
     Cria um modelo homegeneo com Xarray
     region: delimitação fisica (xmin, xmax, zmin, zmax) -> z é positivo quando para baixo
@@ -232,23 +232,26 @@ def create_homogeneus_model_xarray(region, shape, properties):
     nz, nx = shape
     xmin, xmax, zmin, zmax = region
 
-    z_coords = bd.line_coordinates(zmin, zmax, size=nz)
-    x_coords = bd.line_coordinates(xmin, xmax, size=nx)
+    #cria as coord fisicas
+    coords = bd.grid_coordinates(region=region, shape=shape)
+    z_coords = coords[1][:,0] # pega a primeira coluna (profundidade ao longo de z)
+    x_coords = coords[0][0,:] # pega a primeira linha (posição ao longo de x)
 
+    #calcula o espaçamento
     dz = z_coords[1] - z_coords[0]
     dx = x_coords[1] - x_coords[0]
-    model_grids = {}
-
+    
+    #cria as propriedades
+    model_data = {}
     for name, value in properties.items():
         data_array = np.full(shape, value, dtype="float32")
-        model_grids[name] = xr.DataArray(
+        model_data[name] = xr.DataArray(
             data = data_array,
             coords = {"z": z_coords, "x": x_coords},
-            dims = {"z","x"},
+            dims = ("z","x"),
             name = name
         )
     
-    model_dataset = xr.Dataset(model_grids)
-    model_dataset.attrs["dz"] = float(dz)
-    model_dataset.attrs["dx"] = float(dx)
-    return model_dataset
+    model = xr.Dataset(model_data)
+    model.attrs = {"dx": dx, "dz": dz, "region": region}
+    return model

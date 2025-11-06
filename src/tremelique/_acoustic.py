@@ -17,8 +17,9 @@ from matplotlib import animation
 from matplotlib import pyplot as plt
 from numpy import sqrt
 
-from _base import BaseSimulation #alterado
-from _utils import anim_to_html, apply_damping #alterado
+from _storage import open_store
+from _base import BaseSimulation 
+from _utils import anim_to_html, apply_damping 
 
 class Acoustic(BaseSimulation):
     """
@@ -85,15 +86,17 @@ class Acoustic(BaseSimulation):
         * simulation : :class:`tremelique.Acoustic`
             The simulation class instance.
         """
-        with h5py.File(fname, "r") as f:
-            vel = f["velocity"]
+        with open_store(fname, "r") as f:
+            vel= f["velocity"]
             dens = f["density"]
             panels = f["panels"]
+            
             dx = panels.attrs["dx"]
             dz = panels.attrs["dz"]
             dt = panels.attrs["dt"]
             padding = panels.attrs["padding"]
             taper = panels.attrs["taper"]
+
             sim = Acoustic(
                 vel[:],
                 dens[:],
@@ -105,7 +108,13 @@ class Acoustic(BaseSimulation):
             )
             sim.simsize = panels.attrs["simsize"]
             sim.it = panels.attrs["iteration"]
-            sim.sources = pickle.loads(f["sources"].value.tostring())
+
+            data = f["sources"][()]
+            if isinstance(data, bytes):
+                sim.sources = pickle.loads(data)
+            else:
+                sim.sources = pickle.loads(data.tobytes())
+        
         sim.set_verbose(verbose)
         return sim
 
@@ -264,15 +273,18 @@ class Acoustic(BaseSimulation):
         """
         Plot a given frame as an image.
         """
-        with h5py.File(self.cachefile) as f:
+        with self._get_cache("r") as f:
             data = f["panels"][frame]
+
         scale = kwargs.pop("cutoff", np.abs(data).max())
         nz, nx = self.shape
         dx, dz = nx * self.dx, nz * self.dz
+
         if "extent" not in kwargs:
             kwargs["extent"] = [0, dx, dz, 0]
         if "cmap" not in kwargs:
             kwargs["cmap"] = plt.cm.seismic
+
         plt.imshow(data, vmin=-scale, vmax=scale, **kwargs)
         plt.colorbar(pad=0, aspect=30).set_label("Pressure")
 

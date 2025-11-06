@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rich.progress
 import atexit
+
+from _storage import open_store
 from IPython.core.pylabtools import print_figure
 from IPython.display import Image
 from ipywidgets import widgets
@@ -145,7 +147,7 @@ class BaseSimulation(abc.ABC):
         * cache : :class:`h5py.File`
             The open HDF5 file object for the cache.
         """
-        return h5py.File(self.cachefile, mode)
+        return open_store(self.cachefile, mode)
 
     @abc.abstractmethod
     def __getitem__(self, index):
