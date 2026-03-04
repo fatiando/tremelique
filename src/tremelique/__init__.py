@@ -11,6 +11,7 @@ These are the functions and classes that make up the Tremelique API.
 from ._acoustic import Acoustic
 from ._version import __version__
 from ._wavelets import RickerWavelet
+from ._utils import homogeneous_model_xarray, create_homogeneous_model, model, layered_model
 
 # Append a leading "v" to the generated version by setuptools_scm
 __version__ = f"v{__version__}"

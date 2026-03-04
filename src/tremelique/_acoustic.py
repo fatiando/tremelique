@@ -10,16 +10,19 @@ Class for acoustic wave simulation.
 
 import pickle
 
-import h5py
+import base64
 import numba
 import numpy as np
+import xarray as xr
+import h5netcdf
+import os
+
 from matplotlib import animation
 from matplotlib import pyplot as plt
 from numpy import sqrt
 
-from _storage import open_store
-from _base import BaseSimulation 
-from _utils import anim_to_html, apply_damping 
+from ._base import BaseSimulation 
+from ._utils import anim_to_html, apply_damping 
 
 class Acoustic(BaseSimulation):
     """
@@ -33,22 +36,32 @@ class Acoustic(BaseSimulation):
 
     def __init__(
         self,
-        velocity,
-        density,
-        spacing,
+        model,
         cachefile=None,
         dt=None,
         padding=50,
         taper=0.005,
         verbose=True,
     ):
+        self.model = model
+        self.velocity = model["velocity"].values
+        self.density = model["density"].values
+
+        dx = model.attrs.get("dx", 1.0) #se dx não existir dx = 1.0
+        dz = model.attrs.get("dz", 1.0) #se dz não existir dz = 1.0
+        spacing = (dx, dz)
+
         super().__init__(
-            cachefile, spacing, velocity.shape, dt, padding, taper, verbose
+            cachefile, spacing, self.velocity.shape, dt, padding, taper, verbose
         )
-        self.density = density
-        self.velocity = velocity
+    
         if self.dt is None:
             self.dt = self.maxdt()
+
+    @property
+    def wavefield(self):
+        return xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
+        
 
     def __getitem__(self, index):
         """
@@ -65,9 +78,7 @@ class Acoustic(BaseSimulation):
             Numpy array with the 2D panels at the given index.
 
         """
-        with self._get_cache() as f:
-            data = f["panels"][index]
-        return data
+        return self.wavefield["panels"].isel(time=index).values
 
     @staticmethod
     def from_cache(fname, verbose=True):
@@ -86,81 +97,115 @@ class Acoustic(BaseSimulation):
         * simulation : :class:`tremelique.Acoustic`
             The simulation class instance.
         """
-        with open_store(fname, "r") as f:
-            vel= f["velocity"]
-            dens = f["density"]
-            panels = f["panels"]
-            
-            dx = panels.attrs["dx"]
-            dz = panels.attrs["dz"]
-            dt = panels.attrs["dt"]
-            padding = panels.attrs["padding"]
-            taper = panels.attrs["taper"]
-
-            sim = Acoustic(
-                vel[:],
-                dens[:],
-                (dx, dz),
-                dt=dt,
-                padding=padding,
-                taper=taper,
-                cachefile=fname,
-            )
-            sim.simsize = panels.attrs["simsize"]
-            sim.it = panels.attrs["iteration"]
-
-            data = f["sources"][()]
-            if isinstance(data, bytes):
-                sim.sources = pickle.loads(data)
-            else:
-                sim.sources = pickle.loads(data.tobytes())
         
-        sim.set_verbose(verbose)
+        ds = xr.open_dataset(fname, engine="h5netcdf")
+
+        velocity = ds["velocity"].values.astype(np.float32)
+        density = ds["density"].values.astype(np.float32)
+
+        dx = ds.attrs["dx"]
+        dz = ds.attrs["dz"]
+        dt = ds.attrs["dt"]
+        padding = ds.attrs["padding"]
+        taper = ds.attrs["taper"]
+
+        z = ds["z"].values
+        x = ds["x"].values
+
+        model = xr.Dataset(
+            data_vars=dict(
+                velocity=(("z","x"), velocity),
+                density=(("z","x"), density)
+            ),
+        coords=dict(
+            z=z,
+            x=x
+        ),
+        attrs=dict(
+            dx=dx,
+            dz=dz,
+            spacing=(dx, dz),
+            shape=velocity.shape
+        )
+        )
+
+        sim = Acoustic(
+            model=model,
+            cachefile=fname,
+            dt=dt,
+            padding=padding,
+            taper=taper,
+            verbose=verbose
+        )
+
+        sim.simsize = int(ds.attrs["simsize"])
+        sim.it = int(ds.attrs["iteration"])
+
+        if "sources" in ds:
+            sim.sources = pickle.loads(base64.b64decode(ds["sources"].values.item()))
+        else:
+            sim.sources = []
+        
+        ds.close()
         return sim
 
-    def _init_cache(self, npanels, chunks=None, compression="lzf", shuffle=True):
+    def _init_cache(self, npanels):
         """
-        Initialize the hdf5 cache file with this simulation parameters.
+        Initialize the h5netcdf cache file with this simulation parameters.
 
         Parameters
         ----------
         * npanels: int
             number of 2D panels needed for this simulation run
-        *  chunks : HDF5 data set option
-            (Tuple) Chunk shape, or True to enable auto-chunking.
-        * compression: HDF5 data set option
-            (String or int) Compression strategy.  Legal values are 'gzip',
-            'szip', 'lzf'.  If an integer in range(10), this indicates gzip
-            compression level. Otherwise, an integer indicates the number of a
-            dynamically loaded compression filter.
-        * shuffle: (bool) HDF5 data set option
-            (T/F) Enable shuffle filter.
         """
+
+        if os.path.exists(self.cachefile):
+            try:
+                os.remove(self.cachefile)
+            except PermissionError:
+                raise RuntimeError("Cache file is already open" "Do not acess sim wavefield before sim.run()")
+
         nz, nx = self.shape
-        if chunks is None:
-            chunks = (1, nz // 10, nx // 10)
-        with self._get_cache(mode="w") as f:  # create HDF5 data sets
-            nz, nx = self.shape
-            dset = f.create_dataset(
-                "panels",
-                (npanels, nz, nx),
-                maxshape=(None, nz, nx),
-                chunks=chunks,
-                compression=compression,
-                shuffle=shuffle,
-                dtype=np.float32,
-            )
-            dset.attrs["shape"] = self.shape
-            dset.attrs["simsize"] = self.simsize
-            dset.attrs["iteration"] = self.it
-            dset.attrs["dx"] = self.dx
-            dset.attrs["dz"] = self.dz
-            dset.attrs["dt"] = self.dt
-            dset.attrs["padding"] = self.padding
-            dset.attrs["taper"] = self.taper
-            f.create_dataset("velocity", data=self.velocity)
-            f.create_dataset("density", data=self.density)
-            f.create_dataset("sources", data=np.void(pickle.dumps(self.sources)))
+
+        #coordenadas fisicas
+        time = np.arange(npanels, dtype=np.int32) * self.dt
+        z = np.arange(nz, dtype=np.float32) * self.dz
+        x = np.arange(nx, dtype=np.float32) * self.dx
+
+        #criação do Dataset completo
+
+
+        ds = xr.Dataset(
+            data_vars=dict(
+            panels=(("time","z","x"), np.zeros((npanels, nz, nx), dtype=np.float32)),
+            velocity=(("z","x"), self.velocity.astype(np.float32)),
+            density=(("z","x"), self.density.astype(np.float32)),
+            sources=((), base64.b64encode(pickle.dumps(self.sources)).decode("ascii"))
+                        ),
+            coords=dict(
+                time=time,
+                z=z,
+                x=x
+                ),
+
+            attrs=dict(
+                dx=self.dx,
+                dz=self.dz,
+                dt=self.dt,
+                padding=self.padding,
+                taper=self.taper,
+                simsize=0,
+                iteration=self.it,
+                shape=self.shape
+                )
+                    )
+        #unidades físicas (CF-like)
+        ds["time"].attrs["units"] = "s"
+        ds["x"].attrs["units"] = "m"
+        ds["z"].attrs["units"] = "m"
+        ds["panels"].attrs["units"] = "pressure"
+
+        ds.to_netcdf(self.cachefile, engine="h5netcdf", mode="w", unlimited_dims=["time"])
 
     def _expand_cache(self, npanels):
         """
@@ -171,10 +216,21 @@ class Acoustic(BaseSimulation):
         *  npanels: int
             number of 2D panels needed for this simulation run
         """
-        with self._get_cache(mode="a") as f:
-            cache = f["panels"]
-            cache.resize(self.simsize + npanels, axis=0)
+        #with self._get_cache(mode="a") as f:
+        #    cache = f["panels"]
+        #    cache.resize(self.simsize + npanels, axis=0)
+        with h5netcdf.File(self.cachefile, mode="a") as f:
 
+            current_size = f.dimensions["time"].size #tamanho atual da dimensão tempo
+            new_size = current_size + npanels #novo tamanho
+        
+            f.resize_dimension("time", new_size)#expande a dimensão de tempo
+
+            dt = f.attrs.get("dt", self.dt)
+            new_times = np.arange(current_size, new_size, dtype=np.int32) * dt
+            f.variables["time"][current_size:new_size] = new_times
+
+    
     def _cache_panels(self, u, tp1, iteration, simul_size):
         """
         Save the last calculated panels to the hdf5 cache.
@@ -191,14 +247,11 @@ class Acoustic(BaseSimulation):
         * simul_size:
             number of iterations that has been run
         """
-        # Save the panel to disk
-        with self._get_cache(mode="a") as f:
-            cache = f["panels"]
-            cache[simul_size - 1] = u[tp1]
-            cache.attrs["simsize"] = simul_size
-            # I need to update the attribute with this iteration number
-            # so that simulation runs properly after reloaded from file
-            cache.attrs["iteration"] = iteration
+        with h5netcdf.File(self.cachefile, mode="a") as f:
+            f.variables["panels"][simul_size - 1, :, :] = u[tp1]
+            f.attrs["simsize"] = simul_size
+            f.attrs["iteration"] = iteration
+
 
     def _init_panels(self):
         """
@@ -218,9 +271,8 @@ class Acoustic(BaseSimulation):
             nz, nx = self.shape
             u = np.zeros((2, nz, nx), dtype=np.float32)
         else:
-            with self._get_cache() as f:
-                cache = f["panels"]
-                u = cache[self.simsize - 2 : self.simsize][::-1]
+            ds = xr.open_dataset(self.cachefile, engine = "h5netcdf")
+            u = ds["panels"].isel(time=slice(self.simsize - 2, self.simsize)).values[::-1]
         return u
 
     def add_point_source(self, position, wavelet):
@@ -236,6 +288,33 @@ class Acoustic(BaseSimulation):
             example source)
         """
         self.sources.append([position, wavelet])
+
+    def add_point_source_physical(self, position, wavelet):
+        """
+        Add a point source of energy to this simulation.
+
+        Parameters
+        ----------
+        * position : tuple
+            The (x, z) coordinates physical
+        * source : source function
+            (see :class:`~fatiando.seismic.wavefd.Ricker` for an
+            example source)
+        """
+        x, z = position
+
+        index_x = int(round(x/self.dx))
+        index_z = int(round(z/self.dz))
+
+        nz, nx = self.shape
+
+        if not (0<=index_x<nx):
+            raise ValueError(f"A coordenada X da fonte ({x}m) está fora do limite do model")
+        if not (0<=index_z<nz):
+            raise ValueError(f"A coordenada z da fonte ({z}m) está fora do limite do model")
+        
+        self.sources.append(((index_z,index_x), wavelet)) #o timestep usa (z, x) nos indices :(
+
 
     def _timestep(self, u, tm1, t, tp1, iteration):
         """
@@ -273,20 +352,39 @@ class Acoustic(BaseSimulation):
         """
         Plot a given frame as an image.
         """
-        with self._get_cache("r") as f:
-            data = f["panels"][frame]
+        
+        ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
+        if frame<0:
+            frame = ds["panels"].shape[0] + frame
+        
+        data = ds["panels"].isel(time=frame).values.astype(np.float32)
+        data = np.nan_to_num(data, nan=0.0)
 
-        scale = kwargs.pop("cutoff", np.abs(data).max())
+        if "cutoff" in kwargs:
+            scale = kwargs.pop("cutoff")
+        else:
+            scale = float(np.nanmax(np.abs(data)))
+            if scale==0:
+                scale = 1.0
+        
+        ds.close()
+
         nz, nx = self.shape
-        dx, dz = nx * self.dx, nz * self.dz
+        width = nx * self.dx
+        height = nz * self.dz
 
         if "extent" not in kwargs:
-            kwargs["extent"] = [0, dx, dz, 0]
+            kwargs["extent"] = [0, width, -height, 0] # [xmin, xmax, zmax, zmin]
+        
         if "cmap" not in kwargs:
-            kwargs["cmap"] = plt.cm.seismic
+            kwargs["cmap"] = "seismic"
 
-        plt.imshow(data, vmin=-scale, vmax=scale, **kwargs)
-        plt.colorbar(pad=0, aspect=30).set_label("Pressure")
+        ax = plt.gca()
+        im = ax.imshow(data, vmin=-scale, vmax=scale, **kwargs)
+
+        if not ax.images or len(ax.images) == 1:
+            plt.colorbar(im, ax=ax, pad=0.02, aspect=30).set_label("Pressure (Pa)")
+
 
     def animate(
         self,
@@ -307,10 +405,12 @@ class Acoustic(BaseSimulation):
             ax = plt.subplot(111)
             ax.set_xlabel("x")
             ax.set_ylabel("z")
+
         fig = ax.get_figure()
         nz, nx = self.shape
         # Check the aspect ratio of the plot and adjust figure size to match
         aspect = min(self.shape) / max(self.shape)
+        
         if nx > nz:
             width = 10
             height = width * aspect * 0.8
@@ -318,26 +418,104 @@ class Acoustic(BaseSimulation):
             height = 10
             width = height * aspect * 1.5
         fig.set_size_inches(width, height)
+
         # Separate the arguments for imshow
         imshow_args = {"cmap": cmap}
         if cutoff is not None:
             imshow_args["vmin"] = -cutoff
             imshow_args["vmax"] = cutoff
-        wavefield = ax.imshow(np.zeros(self.shape), **imshow_args)
+
+        wavefield = ax.imshow(np.zeros(self.shape, dtype=np.float32), **imshow_args)
         fig.colorbar(wavefield, pad=0, aspect=30).set_label("Pressure")
-        ax.set_title("iteration: 0")
-        frames = self.simsize // every
+        frames = self.simsize // every        
+
+        ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
 
         def plot(i):
-            ax.set_title(f"iteration: {i * every:d}")
-            u = self[i * every]
+            it = i * every
+            ax.set_title(f"iteration: {it:d}")
+            u = ds["panels"][it, :, :].values.astype(np.float32)
             wavefield.set_array(u)
             return wavefield
 
         anim = animation.FuncAnimation(fig, plot, frames=frames, **kwargs)
+        
         if embed:
-            return anim_to_html(anim, fps=fps, dpi=dpi)
+            video = anim_to_html(anim, fps=fps, dpi=dpi)
+            ds.close()
+            return video
+                
         plt.show()
+        ds.close()
+        return anim
+
+    def animate_physical(
+            self,
+            every=1,
+            cutoff=None,
+            ax=None,
+            cmap=plt.cm.seismic,
+            embed=False,
+            fps=10,
+            dpi=70,
+            **kwargs,
+    ):
+        """
+        Create a 2D animation equivalent to animate, but using physical axes (meters) and pressure in Pa.
+        """
+        if ax is None:
+            plt.figure(facecolor="white")
+            ax = plt.subplot(111)
+            ax.set_xlabel("x (m)")
+            ax.set_ylabel("z (m)")
+
+        fig = ax.get_figure()
+        nz, nx = self.shape
+        dx, dz = self.dx, self.dz
+
+        aspect = min(self.shape)/max(self.shape)
+        if nx>nz:
+            width = 10
+            height = width * aspect * 0.8
+        else:
+            height = 10
+            width = height * aspect * 1.5
+        
+        fig.set_size_inches(width, height)
+        
+        imshow_args = {"cmap":cmap}
+        if cutoff is not None:
+            imshow_args["vmin"] = -cutoff
+            imshow_args["vmax"] = cutoff
+        
+        extent = [0, nx * dx, -(nz * dz), 0]
+        
+        wavefield = ax.imshow(
+            np.zeros(self.shape, dtype=np.float32),
+            extent=extent,
+            **imshow_args
+        )
+        
+        fig.colorbar(wavefield, pad=0.02, aspect=30).set_label("Pressure (Pa)")
+        frames = self.simsize//every
+        ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
+
+        def plot(i):
+            it = i * every
+            ax.set_title(f"t = {it* self.dt:.3f} s")
+            u = ds["panels"][it, :, :].values.astype(np.float32)
+            wavefield.set_array(u)
+            return wavefield
+
+        anim = animation.FuncAnimation(fig, plot, frames=frames, **kwargs)
+
+        if embed:
+            video = anim_to_html(anim, fps=fps, dpi=dpi)
+            ds.close()
+            return video
+        
+        plt.show()
+        ds.close()
         return anim
 
     def maxdt(self):
