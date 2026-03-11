@@ -33,23 +33,23 @@ class RickerWavelet:
         res = scale * np.exp(-np.pi * (np.pi * fc * t) ** 2)
         return res
 
-class GaussianWavelet:
 
+class GaussianWavelet:
     def __init__(self, amp, f_cut, delay=0):
         self.amp = amp
         self.f_cut = f_cut
         self.delay = delay
-    
+
     def copy(self):
         return copy.deepcopy(self)
 
     def __call__(self, time):
         sqrt_pi = np.sqrt(np.pi)
-        fc = self.f_cut/(3*sqrt_pi)
+        fc = self.f_cut / (3 * sqrt_pi)
         # Standard delay to make the wavelet start at time zero and be causal
-        td = time - 2*sqrt_pi/self.f_cut
+        td = time - 2 * sqrt_pi / self.f_cut
         # Apply the user defined delay on top
         t = td - self.delay
-        scale = self.amp/(2*np.pi*(np.pi*fc)**2)
-        res = scale*np.exp(-np.pi*(np.pi*fc*t)**2)
+        scale = self.amp / (2 * np.pi * (np.pi * fc) ** 2)
+        res = scale * np.exp(-np.pi * (np.pi * fc * t) ** 2)
         return res

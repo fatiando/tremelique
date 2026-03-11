@@ -9,18 +9,16 @@ Base class for 2D finite-difference simulations.
 """
 
 import abc
+import atexit
 import contextlib
 import os
-import atexit
+import tempfile
 
-
+import h5netcdf
 import matplotlib.pyplot as plt
 import numpy as np
 import rich.progress
-import h5netcdf
 import xarray as xr
-import tempfile
-
 from IPython.core.pylabtools import print_figure
 from IPython.display import Image
 from ipywidgets import widgets
@@ -68,7 +66,7 @@ class BaseSimulation(abc.ABC):
         # it is the `run` iteration time step indexer
         self.it = -1  # iteration time step index (where we are)
         # `it` and `simsize` together allows indefinite simulation runs
-        
+
         if cachefile is None:
             cachefile = self._create_tmp_cache()
             self._temp_cache = True
@@ -92,7 +90,6 @@ class BaseSimulation(abc.ABC):
             except Exception as e:
                 print(f"Error! Failed to delete temporary file {self.cachefile}: {e}.")
 
-
     def _create_tmp_cache(self):
         """
         Create the temporary file used to store data in h5netcdf (.h5) format.
@@ -103,25 +100,24 @@ class BaseSimulation(abc.ABC):
             The name of the file created.
 
         """
-        
+
         directory = os.getcwd()
-        
+
         if self is not None:
-                if self is not None:
-                        prefix = self.__class__.__name__+"-"
-                else:
-                        prefix = "Simulation-"
-        
+            if self is not None:
+                prefix = self.__class__.__name__ + "-"
+            else:
+                prefix = "Simulation-"
+
         tmp_args = {
-                "suffix": ".h5",
-                "prefix": prefix,
-                "dir": directory,
-                "delete": False,
+            "suffix": ".h5",
+            "prefix": prefix,
+            "dir": directory,
+            "delete": False,
         }
         with tempfile.NamedTemporaryFile(**tmp_args) as tmpfile:
-                path = tmpfile.name
+            path = tmpfile.name
         return path
-        
 
     @abc.abstractmethod
     def from_cache(fname, verbose=True):
@@ -162,20 +158,20 @@ class BaseSimulation(abc.ABC):
         - path: caminho do arquivo
         - mode: 'r', 'w', 'a' -> 'r' read, 'w' write, 'a' append
         """
-        #garante que o diretorio existe
+        # garante que o diretorio existe
         d = os.path.dirname(os.path.abspath(self.cachefile))
         if d and not os.path.exists(d):
-                os.makedirs(d, exist_ok=True)
+            os.makedirs(d, exist_ok=True)
 
-        #Abre com h5netcdf 
+        # Abre com h5netcdf
         f = h5netcdf.File(self.cachefile, mode)
         try:
-               yield f
+            yield f
         finally:
-                try: 
-                        f.close()
-                except Exception:
-                        pass
+            try:
+                f.close()
+            except Exception:
+                pass
 
     @abc.abstractmethod
     def __getitem__(self, index):
@@ -218,22 +214,22 @@ class BaseSimulation(abc.ABC):
         if ax is None:
             fig = plt.figure(facecolor="white")
             ax = plt.subplot(111)
-        
-        if frame<0:
+
+        if frame < 0:
             title_frame = self.simsize + frame
         else:
             title_frame = frame
-        
+
         dt = getattr(self, "dt", 0) or 0
         t = title_frame * dt
-        
+
         ax = plt.gca()
         fig = ax.get_figure()
 
         ax.set_title(f"Iteration: {title_frame} | t = {t:.3f} s")
 
         self._plot_snapshot(frame, **kwargs)
-        
+
         nz, nx = self.shape
         dx = getattr(self, "dx", 1.0)
         dz = getattr(self, "dz", 1.0)
@@ -241,25 +237,25 @@ class BaseSimulation(abc.ABC):
         max_x, max_z = nx * dx, nz * dz
 
         ax.set_xlim(0, max_x)
-        ax.set_ylim(-max_z,0)
+        ax.set_ylim(-max_z, 0)
         ax.set_xlabel("x (m)")
         ax.set_ylabel("z (m)")
 
-        aspect = min(self.shape)/max(self.shape)
+        aspect = min(self.shape) / max(self.shape)
 
         with contextlib.suppress(TypeError):
             aspect /= ax.get_aspect()
 
-        if nx>nz:
+        if nx > nz:
             widht = 10
             height = widht * aspect * 0.8
         else:
             height = 8
             widht = height * aspect * 1.5
-        
+
         fig.set_size_inches(widht, height)
         plt.tight_layout()
-        
+
         if raw or embed:
             png = print_figure(fig, dpi=70)
             plt.close(fig)
@@ -268,7 +264,6 @@ class BaseSimulation(abc.ABC):
         if embed:
             return Image(png)
         return None
-
 
     def _repr_png_(self):
         """
@@ -341,4 +336,3 @@ class BaseSimulation(abc.ABC):
 
             #  won't this make it slower than it should? I/O
             self._cache_panels(u, tp1, self.it, self.simsize)
-        

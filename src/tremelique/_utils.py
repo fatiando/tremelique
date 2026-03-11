@@ -12,13 +12,12 @@ import base64
 import pathlib
 import tempfile
 
+import bordado as bd
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
-from IPython.display import Video
 import xarray as xr
-import bordado as bd
-
+from IPython.display import Video
 
 
 def anim_to_html(anim, fps=6, dpi=30):
@@ -207,6 +206,7 @@ def lame_mu(svel, dens):
     mu = dens * svel**2
     return mu
 
+
 def create_homogeneous_model(shape, properties):
     """
     Cria um modelo homenegeo com NumPy
@@ -224,8 +224,8 @@ def homogeneous_model_xarray(region, spacing, properties=None, **kwargs):
     shape: numero de pontos no grid
     properties: dicionario com as propriedades físicas e seus valores
     ex properties: {"velocity":1500, "density":1000}
-    
-    Returns: 
+
+    Returns:
     model:: xarray_Dataset (dataset com coordenadas de 'z' e 'x')
     """
 
@@ -234,46 +234,43 @@ def homogeneous_model_xarray(region, spacing, properties=None, **kwargs):
 
     properties = {**properties, **kwargs}
 
-    if isinstance(spacing,(int, float)):
+    if isinstance(spacing, (int, float)):
         dx = dz = spacing
     else:
         dx, dz = spacing
 
     xmin, xmax, zmin, zmax = region
 
-    #cria as coord fisicas
+    # cria as coord fisicas
     coords = bd.grid_coordinates(region=region, spacing=spacing, adjust="region")
-    
-    z = coords[1][:,0] # pega a primeira coluna (profundidade ao longo de z)
-    x = coords[0][0,:] # pega a primeira linha (posição ao longo de x)
+
+    z = coords[1][:, 0]  # pega a primeira coluna (profundidade ao longo de z)
+    x = coords[0][0, :]  # pega a primeira linha (posição ao longo de x)
     shape = coords[0].shape
     nz, nx = shape
 
-    #cria as propriedades
+    # cria as propriedades
     model_data = {}
-    
+
     for name, value in properties.items():
         data_array = np.full(shape, value, dtype="float32")
         model_data[name] = xr.DataArray(
-            data = data_array,
-            coords = {"z": z, "x": x},
-            dims = ("z","x"),
-            name = name
+            data=data_array, coords={"z": z, "x": x}, dims=("z", "x"), name=name
         )
-    
+
     model = xr.Dataset(model_data)
 
-    model.attrs = { 
-                    "dx": dx,
-                    "dz": dz,
-                    "region": region, #[xmin, xmax, zmin, zmax]
-                    "shape": shape, #(dx, dz) -----> Conversar com o Leo pra ver oq é melhor (dz, dx) ou (dx, dz)
-                    "spacing": spacing, #(nz, nx)
-                    "n_layers": 1,
-                }
+    model.attrs = {
+        "dx": dx,
+        "dz": dz,
+        "region": region,  # [xmin, xmax, zmin, zmax]
+        "shape": shape,  # (dx, dz) -----> Conversar com o Leo pra ver oq é melhor (dz, dx) ou (dx, dz)
+        "spacing": spacing,  # (nz, nx)
+        "n_layers": 1,
+    }
     return model
 
-    
+
 def add_layer_xarray(model, z_top, z_bottom, properties):
     """
     Adiciona (ou sobrescreve) uma camada em um modelo xarray existente.
@@ -290,24 +287,24 @@ def add_layer_xarray(model, z_top, z_bottom, properties):
     properties: dict
         propriedades fisicas das camada
         ex: {"velocity": 2500, "density": 1500}
-    
+
     Returns
     -------
     xr.Dataset
     """
     z = model.z.values
-    mask = (z>=z_top) & (z<z_bottom)
-    
+    mask = (z >= z_top) & (z < z_bottom)
+
     for prop, value in properties.items():
         model[prop].loc[dict(z=z[mask])] = value
-    
+
     return model
 
 
 def add_layer(model, z, z_bottom=None, properties=None, **kwargs):
     """
     Adiciona uma camada horizontal em um modelo xarray
-    
+
     Parameters
     ----------
     model: xr.Dataset
@@ -320,23 +317,23 @@ def add_layer(model, z, z_bottom=None, properties=None, **kwargs):
         Propriedades físicas da camada
     **kwargs:
         Maneira mais "simples" de definir propriedades
-        Ex: velocity=2500, density=1500 
-    
+        Ex: velocity=2500, density=1500
+
     Returns
     -------
     xr.Dataset
         Modelo estratificado ('z', 'x')
     """
     if properties is None:
-        properties={}
+        properties = {}
     properties = {**properties, **kwargs}
 
     if z_bottom is None:
-        dz = model.attrs.get("dz",0)
+        dz = model.attrs.get("dz", 0)
         z_bottom = model.z.values[-1] + dz
-        
+
     z_coords = model.z.values
-    mask = (z_coords>=z) & (z_coords<z_bottom)
+    mask = (z_coords >= z) & (z_coords < z_bottom)
     z_layer = z_coords[mask]
 
     for prop, value in properties.items():
@@ -348,9 +345,9 @@ def add_layer(model, z, z_bottom=None, properties=None, **kwargs):
 def add_layers(model, layers):
     """
     Adiciona múltiplas camadas a um modelo xarray existente com base no add_layer
-    
+
     Parameters
-    ----    
+    ----
     layers: list or dict
     [
         {"z": 0, "z_bottom":300, "velocity":3000}
@@ -367,8 +364,9 @@ def add_layers(model, layers):
         z = layer.pop("z")
         z_bottom = layer.pop("z_bottom", None)
         add_layer(model, z=z, z_bottom=z_bottom, **layer)
-    
+
     return model
+
 
 def layered_model(region, spacing, layers):
     """
@@ -394,69 +392,71 @@ def layered_model(region, spacing, layers):
     xr.Dataset
         Modelo estratificado ('z', 'x')
     """
-    
-    #spacing
-    if isinstance(spacing,(int, float)):
+
+    # spacing
+    if isinstance(spacing, (int, float)):
         dx = dz = spacing
     else:
         dx, dz = spacing
 
-    #coordenadas fisicas
+    # coordenadas fisicas
     coords = bd.grid_coordinates(region=region, spacing=spacing, adjust="region")
-    z = coords[1][:,0]
-    x = coords[0][0,:]
+    z = coords[1][:, 0]
+    x = coords[0][0, :]
     shape = coords[0].shape
     nz, nx = shape
 
-    #ordena a lista de camadas por profundidade em z do topo ao fundo
+    # ordena a lista de camadas por profundidade em z do topo ao fundo
     layers = sorted(layers, key=lambda l: l["z"])
 
-    #propriedades físicas
+    # propriedades físicas
     properties = layers[0]["properties"]
     properties_names = properties.keys()
 
-    #modelo base
+    # modelo base
     model_data = {}
 
     for name, value in properties.items():
         data_array = np.full(shape, value, dtype="float32")
         model_data[name] = xr.DataArray(
-            data=data_array,
-            coords={"z": z, "x": x},
-            dims=("z", "x"),
-            name=name
-            )
-    
-    #aplicação de camadas mais a baixo
-    for i in range(1, len(layers)): #camada 0 é usada pra criar o modelo base (np.full)
-        z_top = layers[i]["z"] #profundidade onde a camada começa
-        
-        #vai definir onde a camada termina
-        if i<len(layers) - 1: 
-            z_bottom = layers[i+1]["z"] #se existe camada abaixo
-        else:
-            z_bottom = z[-1] + dz #se não existe camada abaixo
-        
-        mask = (z>=z_top) & (z<z_bottom) #filtro
+            data=data_array, coords={"z": z, "x": x}, dims=("z", "x"), name=name
+        )
 
-        for name in properties_names: 
-            #value = layers[i]["properties"][name]
-            #model_data[name].loc[dict(z=z[mask])] = value
-            model_data[name].loc[dict(z=z[mask])] = layers[i]["properties"][name] #junção das linhas anteriores
-    
+    # aplicação de camadas mais a baixo
+    for i in range(
+        1, len(layers)
+    ):  # camada 0 é usada pra criar o modelo base (np.full)
+        z_top = layers[i]["z"]  # profundidade onde a camada começa
+
+        # vai definir onde a camada termina
+        if i < len(layers) - 1:
+            z_bottom = layers[i + 1]["z"]  # se existe camada abaixo
+        else:
+            z_bottom = z[-1] + dz  # se não existe camada abaixo
+
+        mask = (z >= z_top) & (z < z_bottom)  # filtro
+
+        for name in properties_names:
+            # value = layers[i]["properties"][name]
+            # model_data[name].loc[dict(z=z[mask])] = value
+            model_data[name].loc[dict(z=z[mask])] = layers[i]["properties"][
+                name
+            ]  # junção das linhas anteriores
+
     model = xr.Dataset(model_data)
 
     model.attrs = {
-        "dx":dx,
-        "dz":dz,
-        "spacing":spacing,
-        "region":region,
-        "shape":shape,
-        "n_layers":len(layers),
-        "model_type":"layered_model"
+        "dx": dx,
+        "dz": dz,
+        "spacing": spacing,
+        "region": region,
+        "shape": shape,
+        "n_layers": len(layers),
+        "model_type": "layered_model",
     }
-    
+
     return model
+
 
 def model(region, spacing, layers=None, properties=None, **kwargs):
     """
@@ -487,44 +487,47 @@ def model(region, spacing, layers=None, properties=None, **kwargs):
         dx, dz = spacing
 
     grid = bd.grid_coordinates(region=region, spacing=spacing, adjust="region")
-    z = grid[1][:,0]
-    x = grid[0][0,:]
-    nz, nx = grid[0].shape #shape vai pegar o formato ("esqueleto") de grid, vai guardar o numero de linhas e numero de colunas (y, x) -> (z, x) 
+    z = grid[1][:, 0]
+    x = grid[0][0, :]
+    nz, nx = grid[
+        0
+    ].shape  # shape vai pegar o formato ("esqueleto") de grid, vai guardar o numero de linhas e numero de colunas (y, x) -> (z, x)
     shape = (nz, nx)
 
     if layers is None:
-        #homogeneous model
+        # homogeneous model
 
         if properties is None:
             properties = {}
-        
+
         properties = {**properties, **kwargs}
         if len(properties) == 0:
-            raise ValueError("Defina as propriedades físicas (velocity, densitty) do modelo homogêneo!")
-        
+            raise ValueError(
+                "Defina as propriedades físicas (velocity, densitty) do modelo homogêneo!"
+            )
+
         model_data = {}
 
         for name, value in properties.items():
             data_array = np.full(shape, value, dtype="float32")
             model_data[name] = xr.DataArray(
-                data=data_array,
-                coords={"z":z, "x":x},
-                dims=("z","x"),
-                name=name
-                )
+                data=data_array, coords={"z": z, "x": x}, dims=("z", "x"), name=name
+            )
         model_type = "homogeneous"
         n_layers = 1
-    
+
     else:
-        #layered model
+        # layered model
         if not isinstance(layers, list) or len(layers) == 0:
             raise ValueError("'layers' não pode ser uma lista vazia")
-        
-        layers = sorted(layers, key=lambda l: l["z"]) #vai ordenar as camadas por z em ordem crescente
-        
+
+        layers = sorted(
+            layers, key=lambda l: l["z"]
+        )  # vai ordenar as camadas por z em ordem crescente
+
         if layers[0]["z"] != z[0]:
             raise ValueError("A primeira camada deve começar no topo do modelo, z=0")
-        
+
         properties_names = []
 
         for key in layers[0].keys():
@@ -536,17 +539,14 @@ def model(region, spacing, layers=None, properties=None, **kwargs):
         for name in properties_names:
             data_array = np.full(shape, layers[0][name], dtype="float32")
             model_data[name] = xr.DataArray(
-                data=data_array,
-                coords={"z":z, "x":x},
-                dims=("z","x"),
-                name=name
+                data=data_array, coords={"z": z, "x": x}, dims=("z", "x"), name=name
             )
-        
+
         for i in range(1, len(layers)):
             z_top = layers[i]["z"]
 
             if i < len(layers) - 1:
-                z_bottom = layers[i+1]["z"]
+                z_bottom = layers[i + 1]["z"]
             else:
                 z_bottom = z[-1] + dz
 
@@ -554,19 +554,19 @@ def model(region, spacing, layers=None, properties=None, **kwargs):
 
             for name in properties_names:
                 model_data[name].loc[dict(z=z[mask])] = layers[i][name]
-        
+
         model_type = "layered"
         n_layers = len(layers)
-    
+
     model = xr.Dataset(model_data)
     model.attrs = {
-        "dx":dx,
-        "dz":dz,
-        "spacing":spacing,
-        "region":region,
-        "shape":shape,
-        "model_type":model_type,
-        "n_layers":n_layers
+        "dx": dx,
+        "dz": dz,
+        "spacing": spacing,
+        "region": region,
+        "shape": shape,
+        "model_type": model_type,
+        "n_layers": n_layers,
     }
 
     return model
