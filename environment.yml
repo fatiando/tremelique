@@ -9,8 +9,10 @@ dependencies:
   - python-build
   # Run
   - numpy
+  - xarray
+  - bordado
   - numba
-  - h5py
+  - h5netcdf
   - matplotlib
   - ipython
   - ipywidgets
