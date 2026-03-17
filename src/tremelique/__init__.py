@@ -10,10 +10,8 @@ These are the functions and classes that make up the Tremelique API.
 
 from ._acoustic import Acoustic
 from ._utils import (
-    create_homogeneous_model,
-    homogeneous_model_xarray,
+    homogeneous_model,
     layered_model,
-    model,
 )
 from ._version import __version__
 from ._wavelets import RickerWavelet

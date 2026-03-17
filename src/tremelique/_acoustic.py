@@ -164,8 +164,8 @@ class Acoustic(BaseSimulation):
 
         # coordenadas fisicas
         time = np.arange(npanels, dtype=np.int32) * self.dt
-        z = np.arange(nz, dtype=np.float32) * self.dz
-        x = np.arange(nx, dtype=np.float32) * self.dx
+        z = self.model.z.values.astype(np.float32)
+        x = self.model.x.values.astype(np.float32)
 
         # criação do Dataset completo
 
@@ -283,29 +283,17 @@ class Acoustic(BaseSimulation):
         Parameters
         ----------
         * position : tuple
-            The (x, z) coordinates of the source
-        * source : source function
-            (see :class:`~fatiando.seismic.wavefd.Ricker` for an
-            example source)
-        """
-        self.sources.append([position, wavelet])
-
-    def add_point_source_physical(self, position, wavelet):
-        """
-        Add a point source of energy to this simulation.
-
-        Parameters
-        ----------
-        * position : tuple
             The (x, z) coordinates physical
         * source : source function
             (see :class:`~fatiando.seismic.wavefd.Ricker` for an
             example source)
         """
         x, z = position
+        
+        x0, z0 = float(self.model.x.values[0]), float(self.model.z.values[0])
 
-        index_x = int(round(x / self.dx))
-        index_z = int(round(z / self.dz))
+        index_x = int(round(abs((x-x0)/self.dx)))
+        index_z = int(round(abs((z-z0)/self.dz)))
 
         nz, nx = self.shape
 
@@ -320,7 +308,7 @@ class Acoustic(BaseSimulation):
 
         self.sources.append(
             ((index_z, index_x), wavelet)
-        )  # o timestep usa (z, x) nos indices :(
+        )
 
     def _timestep(self, u, tm1, t, tp1, iteration):
         """
@@ -392,69 +380,6 @@ class Acoustic(BaseSimulation):
             plt.colorbar(im, ax=ax, pad=0.02, aspect=30).set_label("Pressure (Pa)")
 
     def animate(
-        self,
-        every=1,
-        cutoff=None,
-        ax=None,
-        cmap=plt.cm.seismic,
-        embed=False,
-        fps=10,
-        dpi=70,
-        **kwargs,
-    ):
-        """
-        Create a 2D animation from the current state of the simulation.
-        """
-        if ax is None:
-            plt.figure(facecolor="white")
-            ax = plt.subplot(111)
-            ax.set_xlabel("x")
-            ax.set_ylabel("z")
-
-        fig = ax.get_figure()
-        nz, nx = self.shape
-        # Check the aspect ratio of the plot and adjust figure size to match
-        aspect = min(self.shape) / max(self.shape)
-
-        if nx > nz:
-            width = 10
-            height = width * aspect * 0.8
-        else:
-            height = 10
-            width = height * aspect * 1.5
-        fig.set_size_inches(width, height)
-
-        # Separate the arguments for imshow
-        imshow_args = {"cmap": cmap}
-        if cutoff is not None:
-            imshow_args["vmin"] = -cutoff
-            imshow_args["vmax"] = cutoff
-
-        wavefield = ax.imshow(np.zeros(self.shape, dtype=np.float32), **imshow_args)
-        fig.colorbar(wavefield, pad=0, aspect=30).set_label("Pressure")
-        frames = self.simsize // every
-
-        ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
-
-        def plot(i):
-            it = i * every
-            ax.set_title(f"iteration: {it:d}")
-            u = ds["panels"][it, :, :].values.astype(np.float32)
-            wavefield.set_array(u)
-            return wavefield
-
-        anim = animation.FuncAnimation(fig, plot, frames=frames, **kwargs)
-
-        if embed:
-            video = anim_to_html(anim, fps=fps, dpi=dpi)
-            ds.close()
-            return video
-
-        plt.show()
-        ds.close()
-        return anim
-
-    def animate_physical(
         self,
         every=1,
         cutoff=None,
