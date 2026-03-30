@@ -216,18 +216,9 @@ class Acoustic(BaseSimulation):
         *  npanels: int
             number of 2D panels needed for this simulation run
         """
-        # with self._get_cache(mode="a") as f:
-        #    cache = f["panels"]
-        #    cache.resize(self.simsize + npanels, axis=0)
         with h5netcdf.File(self.cachefile, mode="a") as f:
-            current_size = f.dimensions["time"].size  # tamanho atual da dimensão tempo
-            new_size = current_size + npanels  # novo tamanho
-
-            f.resize_dimension("time", new_size)  # expande a dimensão de tempo
-
-            dt = f.attrs.get("dt", self.dt)
-            new_times = np.arange(current_size, new_size, dtype=np.int32) * dt
-            f.variables["time"][current_size:new_size] = new_times
+            f.resize_dimension("time", self.simsize+npanels)
+            f.variables["time"][self.simsize:self.simsize+npanels] = np.arange(self.simsize, self.simsize+npanels, dtype=np.int32)*self.dt
 
     def _cache_panels(self, u, tp1, iteration, simul_size):
         """
