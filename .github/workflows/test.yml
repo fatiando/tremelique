@@ -54,7 +54,7 @@ jobs:
 
       # Checks-out your repository under $GITHUB_WORKSPACE
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           # Need to fetch more than the last commit so that setuptools_scm can
           # create the correct version string. If the number of commits since
@@ -70,7 +70,7 @@ jobs:
         run: git fetch origin 'refs/tags/*:refs/tags/*'
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@b319fb66c6d6789146dbda193dfec25275cb6064 # v5.4.0
         with:
           python-version: ${{ matrix.python }}
 
@@ -101,7 +101,7 @@ jobs:
         run: echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
 
       - name: Setup caching for pip packages
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: ${{ steps.pip-cache.outputs.dir }}
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements-full.txt') }}
@@ -124,7 +124,7 @@ jobs:
           mv .coverage .coverage.${{ matrix.os }}_${{ matrix.python }}_${{ matrix.dependencies }}
 
       - name: Upload coverage as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1 # v4.6.1
         with:
           path: .coverage.*
           name: coverage_${{ matrix.os }}_${{ matrix.python }}_${{ matrix.dependencies }}
@@ -143,13 +143,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           # The GitHub token is preserved by default but this job doesn't need
           # to be able to push to GitHub.
           persist-credentials: false
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@b319fb66c6d6789146dbda193dfec25275cb6064 # v5.4.0
         with:
           # Use latest Python, so it understands all syntax.
           python-version: "3.13"
@@ -159,12 +159,12 @@ jobs:
         run: echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
 
       - name: Setup caching for pip packages
-        uses: actions/cache@v4
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: ${{ steps.pip-cache.outputs.dir }}
           key: ${{ runner.os }}-pip-coverage
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d1c # v4.1.8
         with:
           pattern: coverage_*
           # If true, the downloaded artifacts will be in the same directory

@@ -9,8 +9,8 @@ Class for acoustic wave simulation.
 """
 
 import base64
-import os
 import pickle
+from pathlib import Path
 
 import h5netcdf
 import numba
@@ -60,7 +60,9 @@ class Acoustic(BaseSimulation):
 
     @property
     def wavefield(self):
-        with xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort") as ds:
+        with xr.open_dataset(
+            self.cachefile, engine="h5netcdf", phony_dims="sort"
+        ) as ds:
             data = ds["panels"].load()
         return data
 
@@ -79,7 +81,9 @@ class Acoustic(BaseSimulation):
             Numpy array with the 2D panels at the given index.
 
         """
-        with xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort") as ds:
+        with xr.open_dataset(
+            self.cachefile, engine="h5netcdf", phony_dims="sort"
+        ) as ds:
             data = ds["panels"].isel(time=index).values
         return data
 
@@ -90,19 +94,17 @@ class Acoustic(BaseSimulation):
 
         Parameters
         ----------
-        * fname: str
+        fname : str
             HDF5 file path containing a previous simulation stored
-        * verbose: bool
+        verbose : bool
             Progress status shown or not
 
         Returns
         -------
-        * simulation : :class:`tremelique.Acoustic`
+        simulation : :class:`tremelique.Acoustic`
             The simulation class instance.
         """
-
         with xr.open_dataset(fname, engine="h5netcdf") as ds:
-
             velocity = ds["velocity"].values.astype(np.float32)
             density = ds["density"].values.astype(np.float32)
 
@@ -116,15 +118,21 @@ class Acoustic(BaseSimulation):
             x = ds["x"].values
 
             model = xr.Dataset(
-                data_vars=dict(
-                    velocity=(("z", "x"), velocity), density=(("z", "x"), density)
-                ),
-                coords=dict(z=z, x=x),
-                attrs=dict(dx=dx, dz=dz, spacing=(dx, dz), shape=velocity.shape),
+                data_vars={
+                    "velocity": (("z", "x"), velocity),
+                    "density": (("z", "x"), density),
+                },
+                coords={"z": z, "x": x},
+                attrs={
+                    "dx": dx,
+                    "dz": dz,
+                    "spacing": (dx, dz),
+                    "shape": velocity.shape,
+                },
             )
 
             sim = Acoustic(
-                model=model,
+                modl=model,
                 cachefile=fname,
                 dt=dt,
                 padding=padding,
@@ -136,7 +144,9 @@ class Acoustic(BaseSimulation):
             sim.it = int(ds.attrs["iteration"])
 
             if "sources" in ds:
-                sim.sources = pickle.loads(base64.b64decode(ds["sources"].values.item()))
+                sim.sources = pickle.loads(
+                    base64.b64decode(ds["sources"].values.item())
+                )
             else:
                 sim.sources = []
 
@@ -148,54 +158,54 @@ class Acoustic(BaseSimulation):
 
         Parameters
         ----------
-        * npanels: int
+        npanels : int
             number of 2D panels needed for this simulation run
         """
-
-        if os.path.exists(self.cachefile):
+        if Path(self.cachefile).exists():
             try:
-                os.remove(self.cachefile)
-            except PermissionError:
-                raise RuntimeError(
+                Path(self.cachefile).unlink()
+            except PermissionError as err:
+                msg_err_init_cache = (
                     "Cache file is already open"
                     "Do not acess sim wavefield before sim.run()"
                 )
+                raise RuntimeError(msg_err_init_cache) from err
 
         nz, nx = self.shape
 
-        # coordenadas fisicas
+        # Physical coordinates
         time = np.arange(npanels, dtype=np.int32) * self.dt
         z = self.model.z.values.astype(np.float32)
         x = self.model.x.values.astype(np.float32)
 
-        # criação do Dataset completo
+        # Create a complete Dataset
 
         ds = xr.Dataset(
-            data_vars=dict(
-                panels=(
+            data_vars={
+                "panels": (
                     ("time", "z", "x"),
                     np.zeros((npanels, nz, nx), dtype=np.float32),
                 ),
-                velocity=(("z", "x"), self.velocity.astype(np.float32)),
-                density=(("z", "x"), self.density.astype(np.float32)),
-                sources=(
+                "velocity": (("z", "x"), self.velocity.astype(np.float32)),
+                "density": (("z", "x"), self.density.astype(np.float32)),
+                "sources": (
                     (),
                     base64.b64encode(pickle.dumps(self.sources)).decode("ascii"),
                 ),
-            ),
-            coords=dict(time=time, z=z, x=x),
-            attrs=dict(
-                dx=self.dx,
-                dz=self.dz,
-                dt=self.dt,
-                padding=self.padding,
-                taper=self.taper,
-                simsize=0,
-                iteration=self.it,
-                shape=self.shape,
-            ),
+            },
+            coords={"time": time, "z": z, "x": x},
+            attrs={
+                "dx": self.dx,
+                "dz": self.dz,
+                "dt": self.dt,
+                "padding": self.padding,
+                "taper": self.taper,
+                "simsize": 0,
+                "iteration": self.it,
+                "shape": self.shape,
+            },
         )
-        # unidades físicas (CF-like)
+        # Physical units (CF-like)
         ds["time"].attrs["units"] = "s"
         ds["x"].attrs["units"] = "m"
         ds["x"].attrs["long_name"] = "horizontal"
@@ -218,8 +228,11 @@ class Acoustic(BaseSimulation):
             number of 2D panels needed for this simulation run
         """
         with h5netcdf.File(self.cachefile, mode="a") as f:
-            f.resize_dimension("time", self.simsize+npanels)
-            f.variables["time"][self.simsize:self.simsize+npanels] = np.arange(self.simsize, self.simsize+npanels, dtype=np.int32)*self.dt
+            f.resize_dimension("time", self.simsize + npanels)
+            f.variables["time"][self.simsize : self.simsize + npanels] = (
+                np.arange(self.simsize, self.simsize + npanels, dtype=np.int32)
+                * self.dt
+            )
 
     def _cache_panels(self, u, tp1, iteration, simul_size):
         """
@@ -274,33 +287,29 @@ class Acoustic(BaseSimulation):
 
         Parameters
         ----------
-        * position : tuple
-            The (x, z) coordinates physical
-        * source : source function
-            (see :class:`~fatiando.seismic.wavefd.Ricker` for an
-            example source)
+        position : tuple
+            The physical (x, z) coordinates of the source in meters.
+        wavelet : callable
+            The source time function to be injected. See
+            :class:`~tremelique.RickerWavelet` for an example.
         """
         x, z = position
-        
+
         x0, z0 = float(self.model.x.values[0]), float(self.model.z.values[0])
 
-        index_x = int(round(abs((x-x0)/self.dx)))
-        index_z = int(round(abs((z-z0)/self.dz)))
+        index_x = round(abs((x - x0) / self.dx))
+        index_z = round(abs((z - z0) / self.dz))
 
         nz, nx = self.shape
 
         if not (0 <= index_x < nx):
-            raise ValueError(
-                f"A coordenada X da fonte ({x}m) está fora do limite do model"
-            )
+            msg_out_x = f"Source X coordinate ({x} m) is out of model bounds."
+            raise ValueError(msg_out_x)
         if not (0 <= index_z < nz):
-            raise ValueError(
-                f"A coordenada z da fonte ({z}m) está fora do limite do model"
-            )
+            msg_out_z = f"Source Z coordinate ({x} m) is out of model bounds."
+            raise ValueError(msg_out_z)
 
-        self.sources.append(
-            ((index_z, index_x), wavelet)
-        )
+        self.sources.append(((index_z, index_x), wavelet))
 
     def _timestep(self, u, tm1, t, tp1, iteration):
         """
@@ -338,7 +347,6 @@ class Acoustic(BaseSimulation):
         """
         Plot a given frame as an image.
         """
-
         ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
         if frame < 0:
             frame = ds["panels"].shape[0] + frame
@@ -419,7 +427,9 @@ class Acoustic(BaseSimulation):
         fig.colorbar(wavefield, pad=0.02, aspect=30).set_label("Pressure (Pa)")
         frames = self.simsize // every
 
-        with xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort") as ds:
+        with xr.open_dataset(
+            self.cachefile, engine="h5netcdf", phony_dims="sort"
+        ) as ds:
             anim_data = ds["panels"][0::every, :, :].values.astype(np.float32)
 
         def plot(i):

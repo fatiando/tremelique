@@ -11,14 +11,14 @@ Base class for 2D finite-difference simulations.
 import abc
 import atexit
 import contextlib
-import os
 import tempfile
+import warnings
+from pathlib import Path
 
 import h5netcdf
 import matplotlib.pyplot as plt
 import numpy as np
 import rich.progress
-import xarray as xr
 from IPython.core.pylabtools import print_figure
 from IPython.display import Image
 from ipywidgets import widgets
@@ -80,15 +80,18 @@ class BaseSimulation(abc.ABC):
     @atexit.register
     def _delete_tmp_cache(self):
         """
-        Clears the temporary cache file when the object is destroyed.
+        Clear the temporary cache file when the object is destroyed.
         """
-        if getattr(self, "_temp_cache") and os.path.exists(self.cachefile):
+        if self._temp_cache and Path(self.cachefile).exists():
             try:
-                os.remove(self.cachefile)
+                Path(self.cachefile).unlink()
             except FileNotFoundError:
                 pass
             except Exception as e:
-                print(f"Error! Failed to delete temporary file {self.cachefile}: {e}.")
+                msg_temp_file = (
+                    f"Error! Failed to delete temporary file {self.cachefile}: {e}."
+                )
+                warnings.warn(msg_temp_file, RuntimeWarning, stacklevel=2)
 
     def _create_tmp_cache(self):
         """
@@ -100,8 +103,7 @@ class BaseSimulation(abc.ABC):
             The name of the file created.
 
         """
-
-        directory = os.getcwd()
+        directory = Path.cwd()
 
         if self is not None:
             if self is not None:
@@ -145,33 +147,23 @@ class BaseSimulation(abc.ABC):
 
         Parameters
         ----------
-        * mode: str
+        mode: str
             'r' or 'w' for reading or writing.
 
         Returns
         -------
-        * cache : :class:`h5py.File`
+        cache : :class:`h5py.File`
             The open HDF5 file object for the cache.
         """
-        """
-        Abre/Fecha um arquivo HDF5/netCDF com h5netcdf
-        - path: caminho do arquivo
-        - mode: 'r', 'w', 'a' -> 'r' read, 'w' write, 'a' append
-        """
-        # garante que o diretorio existe
-        d = os.path.dirname(os.path.abspath(self.cachefile))
-        if d and not os.path.exists(d):
-            os.makedirs(d, exist_ok=True)
+        if not Path(self.cachefile).resolve().parent.exists():
+            Path(self.cachefile).resolve().parent.mkdir(parents=True, exist_ok=True)
 
-        # Abre com h5netcdf
-        f = h5netcdf.File(self.cachefile, mode)
+        file = h5netcdf.File(self.cachefile, mode)
         try:
-            yield f
+            yield file
         finally:
-            try:
-                f.close()
-            except Exception:
-                pass
+            with contextlib.suppress(Exception):
+                file.close()
 
     @abc.abstractmethod
     def __getitem__(self, index):
@@ -194,31 +186,27 @@ class BaseSimulation(abc.ABC):
 
         Parameters
         ----------
-        * frame : int
+        frame : int
             The time step iteration number.
-        * embed : bool
+        embed : bool
             True to plot it inline.
-        * raw : bool
+        raw : bool
             True for raw byte image.
-        * ax : None or matplotlib Axes
+        ax : None or matplotlib Axes
             If not None, will assume this is a matplotlib Axes and make the
             plot on it.
 
         Returns
         -------
-        * image : bytes-array or :class:`IPython.display.Image` or None
+        image : bytes-array or :class:`IPython.display.Image` or None
             Raw byte image if ``raw=True`` PNG picture if ``embed=True`` or
             None.
         """
-
         if ax is None:
             fig = plt.figure(facecolor="white")
             ax = plt.subplot(111)
 
-        if frame < 0:
-            title_frame = self.simsize + frame
-        else:
-            title_frame = frame
+        title_frame = self.simsize + frame if frame < 0 else frame
 
         dt = getattr(self, "dt", 0) or 0
         t = title_frame * dt

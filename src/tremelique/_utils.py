@@ -209,16 +209,27 @@ def lame_mu(svel, dens):
 
 def homogeneous_model(region, spacing, properties=None, **kwargs):
     """
-    Cria um modelo homegeneo com Xarray
-    region: delimitação fisica (xmin, xmax, zmin, zmax) -> z é positivo quando para baixo
-    shape: numero de pontos no grid
-    properties: dicionario com as propriedades físicas e seus valores
-    ex properties: {"velocity":1500, "density":1000}
+    Create a homogeneous model using Xarray.
 
-    Returns:
-    model:: xarray_Dataset (dataset com coordenadas de 'z' e 'x')
+    Parameters
+    ----------
+    region : tuple
+        Physical boundaries of the model as (xmin, xmax, zmin, zmax).
+        The z-axis is positive downwards.
+    spacing : float or tuple
+        Grid spacing (dx, dz).
+    properties : dict, optional
+        Dictionary containing physical properties and their values.
+        For example: ``{"velocity": 1500, "density": 1000}``.
+    **kwargs : dict
+        Additional physical properties passed as keyword arguments.
+
+    Returns
+    -------
+    model : xarray.Dataset
+        Dataset containing the coordinates 'z' and 'x' with the specified
+        properties.
     """
-
     if properties is None:
         properties = {}
 
@@ -229,17 +240,12 @@ def homogeneous_model(region, spacing, properties=None, **kwargs):
     else:
         dx, dz = spacing
 
-    xmin, xmax, zmin, zmax = region
-
-    # cria as coord fisicas
     coords = bd.grid_coordinates(region=region, spacing=spacing, adjust="region")
 
-    z = coords[1][:, 0]  # pega a primeira coluna (profundidade ao longo de z)
-    x = coords[0][0, :]  # pega a primeira linha (posição ao longo de x)
+    z = coords[1][:, 0]  # Get the first column (depth along z)
+    x = coords[0][0, :]  # Get the first row (position along x))
     shape = coords[0].shape
-    nz, nx = shape
 
-    # cria as propriedades
     model_data = {}
 
     for name, value in properties.items():
@@ -258,7 +264,7 @@ def homogeneous_model(region, spacing, properties=None, **kwargs):
     model["z"].attrs["long_name"] = "vertical"
     model["velocity"].attrs["units"] = "m/s"
     model["velocity"].attrs["long_name"] = "wave velocity"
-    model["density"].attrs["units"] = "kg/m^3"
+    model["density"].attrs["units"] = "kg/m³"
     model["density"].attrs["long_name"] = "density"
 
     model.attrs = {
@@ -274,58 +280,29 @@ def homogeneous_model(region, spacing, properties=None, **kwargs):
     return model
 
 
-def add_layer_xarray(model, z_top, z_bottom, properties):
-    """
-    Adiciona (ou sobrescreve) uma camada em um modelo xarray existente.
-
-    Parameters
-    ----------
-
-    model: xr.Dataset
-        modelo estratificado com dims ('z', 'x')
-    z_top: float
-        profundidade do topo da camada
-    z_bottom: float
-        profundidade da base da camada
-    properties: dict
-        propriedades fisicas das camada
-        ex: {"velocity": 2500, "density": 1500}
-
-    Returns
-    -------
-    xr.Dataset
-    """
-    z = model.z.values
-    mask = (z >= z_top) & (z < z_bottom)
-
-    for prop, value in properties.items():
-        model[prop].loc[dict(z=z[mask])] = value
-
-    return model
-
-
 def add_layer(model, z, z_bottom=None, properties=None, **kwargs):
     """
-    Adiciona uma camada horizontal em um modelo xarray
+    Add a horizontal layer to an existing Xarray model.
 
     Parameters
     ----------
-    model: xr.Dataset
-        Modelo com dims ('z', 'x')
-    z: float
-        Profundidade onde a camada começa
-    z_bottom: float
-        Profundidade onde a camada termina (se None vai até o final do modelo)
-    properties: dict, optional
-        Propriedades físicas da camada
-    **kwargs:
-        Maneira mais "simples" de definir propriedades
-        Ex: velocity=2500, density=1500
+    model : xarray.Dataset
+        Stratified model with dimensions ('z', 'x').
+    z : float
+        Depth where the layer begins.
+    z_bottom : float, optional
+        Depth where the layer ends. If None, the layer extends to the
+        bottom of the model.
+    properties : dict, optional
+        Dictionary containing physical properties of the layer.
+    **kwargs : dict
+        Additional physical properties passed as keyword arguments
+        (e.g., velocity=2500, density=1500).
 
     Returns
     -------
-    xr.Dataset
-        Modelo estratificado ('z', 'x')
+    model : xarray.Dataset
+        The updated stratified model.
     """
     if properties is None:
         properties = {}
@@ -340,28 +317,34 @@ def add_layer(model, z, z_bottom=None, properties=None, **kwargs):
     z_layer = z_coords[mask]
 
     for prop, value in properties.items():
-        model[prop].loc[dict(z=z_layer)] = value
+        model[prop].loc[{"z": z_layer}] = value
 
     return model
 
 
 def add_layers(model, layers):
     """
-    Adiciona múltiplas camadas a um modelo xarray existente com base no add_layer
+    Add multiple horizontal layers to an existing Xarray model.
 
     Parameters
-    ----
-    layers: list or dict
-    [
-        {"z": 0, "z_bottom":300, "velocity":3000}
-        {"z": 300, "z_bottom":1000, "velocity":4200}
-        {"z": 1000, "velocity":5000}
-    ]
+    ----------
+    model : xarray.Dataset
+        Stratified model with dimensions ('z', 'x').
+    layers : list of dict
+        A list of dictionaries where each dictionary defines a layer.
+        Must contain 'z' (start depth) and optionally 'z_bottom' (end depth)
+        along with any physical properties.
+        Example:
+        [
+            {"z": 0, "z_bottom": 300, "velocity": 3000},
+            {"z": 300, "z_bottom": 1000, "velocity": 4200},
+            {"z": 1000, "velocity": 5000}
+        ]
 
     Returns
     -------
-    xr.Dataset
-        Modelo estratificado ('z', 'x')
+    model : xarray.Dataset
+        The updated stratified model.
     """
     for layer in layers:
         z = layer.pop("z")
@@ -373,52 +356,50 @@ def add_layers(model, layers):
 
 def layered_model(region, spacing, layers):
     """
-    Cria um modelo estratificado de uma maneira mais simples para o usuario
+    Create a stratified model in a simplified way.
 
     Parameters
     ----------
-    region: tuple
-        (xmin, xmax, zmin, zmax)
-    spacing: float or tuple
-        (dx, dz)
-    layers: list of dict
-        Definição de como a camada deve ser:
+    region : tuple
+        Physical boundaries of the model as (xmin, xmax, zmin, zmax).
+    spacing : float or tuple
+        Grid spacing (dx, dz) or a single float for both.
+    layers : list of dict
+        Definition of each layer's properties.
+        Example:
         {
-            "z": profundidade do topo da camada (em metros, não em indice),
-            "velocity": valor,
-            "density": valor
+            "z": depth of the layer top (in meters, not index),
+            "velocity": value,
+            "density": value
         }
-        A primeira camada deve começar em z = 0
+        The first layer must start at z = 0.
 
     Returns
     -------
-    xr.Dataset
-        Modelo estratificado ('z', 'x')
+    model : xarray.Dataset
+        Stratified model with dimensions ('z', 'x').
     """
-
-    # spacing
+    # Grid spacing
     if isinstance(spacing, (int, float)):
         dx = dz = spacing
     else:
         dx, dz = spacing
 
-    # coordenadas fisicas
+    # Physical coordinates
     coords = bd.grid_coordinates(region=region, spacing=spacing, adjust="region")
     z = coords[1][:, 0]
     x = coords[0][0, :]
     shape = coords[0].shape
-    nz, nx = shape
 
-    # ordena a lista de camadas por profundidade em z do topo ao fundo
-    layers = sorted(layers, key=lambda l: l["z"])
+    # Sort the list of layers by depth (z) from top to bottom
+    layers = sorted(layers, key=lambda layer: layer["z"])
 
-    # propriedades físicas
+    # Physical properties
     properties_names = []
-    for key in layers[0].keys():
+    for key in layers[0]:
         if key != "z":
             properties_names.append(key)
 
-    # modelo base
     model_data = {}
 
     for name in properties_names:
@@ -428,31 +409,28 @@ def layered_model(region, spacing, layers):
             data=data_array, coords={"z": z, "x": x}, dims=("z", "x"), name=name
         )
 
-    # aplicação de camadas mais a baixo
+    # Apply deeper layers
     for i in range(
         1, len(layers)
-    ):  # camada 0 é usada pra criar o modelo base (np.full)
-        z_top = layers[i]["z"]  # profundidade onde a camada começa
+    ):  # Layer 0 is used to create the base model (np.full)
+        z_top = layers[i]["z"]  # Depth where the layer starts
 
-        # vai definir onde a camada termina
-        if i < len(layers) - 1:
-            z_bottom = layers[i + 1]["z"]  # se existe camada abaixo
-        else:
-            z_bottom = z[-1] + dz  # se não existe camada abaixo
+        # Define where the layer ends
+        z_bottom = (
+            layers[i + 1]["z"] if i < len(layers) - 1 else z[-1] + dz
+        )  # if there is a layer below
 
-        mask = (z >= z_top) & (z < z_bottom)  # filtro
+        mask = (z >= z_top) & (z < z_bottom)  # depth mask
 
         for name in properties_names:
-            model_data[name].loc[dict(z=z[mask])] = layers[i][
-                name
-            ]
+            model_data[name].loc[{"z": z[mask]}] = layers[i][name]
 
     model = xr.Dataset(model_data)
 
     model = model.assign_coords(z=-model.z)
 
     model["x"].attrs["units"] = "m"
-    model["x"].attrs["long_name"] = "horizotal"
+    model["x"].attrs["long_name"] = "horizontal"
     model["z"].attrs["units"] = "m"
     model["z"].attrs["long_name"] = "vertical"
     model["velocity"].attrs["units"] = "m/s"
@@ -471,4 +449,3 @@ def layered_model(region, spacing, layers):
     }
 
     return model
-
