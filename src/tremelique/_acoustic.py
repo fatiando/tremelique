@@ -13,6 +13,8 @@ import pickle
 from pathlib import Path
 
 import h5netcdf
+import matplotlib.colors as mcolors
+import matplotlib.patches as mpatches
 import numba
 import numpy as np
 import xarray as xr
@@ -32,6 +34,24 @@ class Acoustic(BaseSimulation):
     finite-difference method of [DiBartolo2012]_. Uses a damping scheme to
     suppress reflections from the left, right, and bottom boundaries. The top
     boundary has a free-surface boundary condition.
+
+    Parameters
+    ----------
+    model : xarray.Dataset
+        The velocity and density model for the simulation.
+    cachefile : str or None, optional
+        Path to the HDF5 file to be used as cache. If None, a temporary
+        file will be created.
+    dt : float or None, optional
+        The time interval for the simulation. If None, it will be calculated
+        automatically using the `maxdt` method.
+    padding : int, optional
+        Number of grid points to use for the absorbing boundary padding.
+        Default is 50.
+    taper : float, optional
+        Decay factor for the absorbing boundaries. Default is 0.005.
+    verbose : bool, optional
+        If True, prints progress status. Default is True.
     """
 
     def __init__(
@@ -47,8 +67,8 @@ class Acoustic(BaseSimulation):
         self.velocity = model["velocity"].values
         self.density = model["density"].values
 
-        dx = model.attrs.get("dx", 1.0)  # se dx não existir dx = 1.0
-        dz = model.attrs.get("dz", 1.0)  # se dz não existir dz = 1.0
+        dx = model.attrs.get("dx", 1.0)
+        dz = model.attrs.get("dz", 1.0)
         spacing = (dx, dz)
 
         super().__init__(
@@ -63,28 +83,28 @@ class Acoustic(BaseSimulation):
         with xr.open_dataset(
             self.cachefile, engine="h5netcdf", phony_dims="sort"
         ) as ds:
-            data = ds["panels"].load()
+            data = ds["pressure"].load()
         return data
 
     def __getitem__(self, index):
         """
-        Get an iteration of the panels object from the hdf5 cache file.
+        Get an iteration of the pressure object from the hdf5 cache file.
 
         Parameters
         ----------
-        * index: index or slice
+        index : index or slice
             Index for slicing hdf5 data set.
 
         Returns
         -------
-        * panels : array
-            Numpy array with the 2D panels at the given index.
+        pressure : array
+            Numpy array with the 2D pressure at the given index.
 
         """
         with xr.open_dataset(
             self.cachefile, engine="h5netcdf", phony_dims="sort"
         ) as ds:
-            data = ds["panels"].isel(time=index).values
+            data = ds["pressure"].isel(time=index).values
         return data
 
     @staticmethod
@@ -131,8 +151,8 @@ class Acoustic(BaseSimulation):
                 },
             )
 
-            sim = Acoustic(
-                modl=model,
+            simulation = Acoustic(
+                model=model,
                 cachefile=fname,
                 dt=dt,
                 padding=padding,
@@ -140,26 +160,26 @@ class Acoustic(BaseSimulation):
                 verbose=verbose,
             )
 
-            sim.simsize = int(ds.attrs["simsize"])
-            sim.it = int(ds.attrs["iteration"])
+            simulation.simsize = int(ds.attrs["simsize"])
+            simulation.it = int(ds.attrs["iteration"])
 
             if "sources" in ds:
-                sim.sources = pickle.loads(
+                simulation.sources = pickle.loads(
                     base64.b64decode(ds["sources"].values.item())
                 )
             else:
-                sim.sources = []
+                simulation.sources = []
 
-        return sim
+        return simulation
 
-    def _init_cache(self, npanels):
+    def _init_cache(self, num_steps):
         """
         Initialize the h5netcdf cache file with this simulation parameters.
 
         Parameters
         ----------
-        npanels : int
-            number of 2D panels needed for this simulation run
+        num_steps : int
+            number of 2D pressure fields needed for this simulation run
         """
         if Path(self.cachefile).exists():
             try:
@@ -174,7 +194,7 @@ class Acoustic(BaseSimulation):
         nz, nx = self.shape
 
         # Physical coordinates
-        time = np.arange(npanels, dtype=np.int32) * self.dt
+        time = np.arange(num_steps, dtype=np.int32) * self.dt
         z = self.model.z.values.astype(np.float32)
         x = self.model.x.values.astype(np.float32)
 
@@ -182,9 +202,9 @@ class Acoustic(BaseSimulation):
 
         ds = xr.Dataset(
             data_vars={
-                "panels": (
+                "pressure": (
                     ("time", "z", "x"),
-                    np.zeros((npanels, nz, nx), dtype=np.float32),
+                    np.zeros((num_steps, nz, nx), dtype=np.float32),
                 ),
                 "velocity": (("z", "x"), self.velocity.astype(np.float32)),
                 "density": (("z", "x"), self.density.astype(np.float32)),
@@ -211,71 +231,71 @@ class Acoustic(BaseSimulation):
         ds["x"].attrs["long_name"] = "horizontal"
         ds["z"].attrs["units"] = "m"
         ds["z"].attrs["long_name"] = "vertical"
-        ds["panels"].attrs["units"] = "Pa"
-        ds["panels"].attrs["long_name"] = "pressure"
+        ds["pressure"].attrs["units"] = "Pa"
+        ds["pressure"].attrs["long_name"] = "pressure"
 
         ds.to_netcdf(
             self.cachefile, engine="h5netcdf", mode="w", unlimited_dims=["time"]
         )
 
-    def _expand_cache(self, npanels):
+    def _expand_cache(self, num_steps):
         """
         Expand the hdf5 cache for more iterations.
 
         Parameters
         ----------
-        *  npanels: int
-            number of 2D panels needed for this simulation run
+        num_steps: int
+            number of 2D pressure needed for this simulation run
         """
         with h5netcdf.File(self.cachefile, mode="a") as f:
-            f.resize_dimension("time", self.simsize + npanels)
-            f.variables["time"][self.simsize : self.simsize + npanels] = (
-                np.arange(self.simsize, self.simsize + npanels, dtype=np.int32)
+            f.resize_dimension("time", self.simsize + num_steps)
+            f.variables["time"][self.simsize : self.simsize + num_steps] = (
+                np.arange(self.simsize, self.simsize + num_steps, dtype=np.int32)
                 * self.dt
             )
 
-    def _cache_panels(self, u, tp1, iteration, simul_size):
+    def _cache_wavefield(self, u, tp1, iteration, simul_size):
         """
-        Save the last calculated panels to the hdf5 cache.
+        Save the last calculated pressure to the hdf5 cache.
 
         Parameters
         ----------
-        * panels : tuple or variable
-            tuple or variable containing all 2D panels needed for
+        pressure : array
+            tuple or variable containing all 2D pressure needed for
             this simulation
-        * tp1 : int
-            panel time index
-        * iteration:
+        tp1 : int
+            time index
+        iteration : int
             iteration number
-        * simul_size:
+        simul_size : int
             number of iterations that has been run
         """
         with h5netcdf.File(self.cachefile, mode="a") as f:
-            f.variables["panels"][simul_size - 1, :, :] = u[tp1]
+            f.variables["pressure"][simul_size - 1, :, :] = u[tp1]
             f.attrs["simsize"] = simul_size
             f.attrs["iteration"] = iteration
 
-    def _init_panels(self):
+    def _init_wavefield(self):
         """
-        Start the simulation panels used for finite difference solution.
+        Start the simulation pressure used for finite difference solution.
 
         Keep consistency of simulations if loaded from file.
 
         Returns
         -------
-        * return:
-            panels object
+        u : array
+          Array containing the initial pressure fields for the simulation.
 
         """
         # If this is the first run, start with zeros, else, get the last two
-        # panels from the cache so that the simulation can be resumed
+        # pressure from the cache so that the simulation can be resumed
         if self.simsize == 0:
             nz, nx = self.shape
             u = np.zeros((2, nz, nx), dtype=np.float32)
         else:
             with xr.open_dataset(self.cachefile, engine="h5netcdf") as ds:
                 u = (
-                    ds["panels"]
+                    ds["pressure"]
                     .isel(time=slice(self.simsize - 2, self.simsize))
                     .values[::-1]
                 )
@@ -306,7 +326,7 @@ class Acoustic(BaseSimulation):
             msg_out_x = f"Source X coordinate ({x} m) is out of model bounds."
             raise ValueError(msg_out_x)
         if not (0 <= index_z < nz):
-            msg_out_z = f"Source Z coordinate ({x} m) is out of model bounds."
+            msg_out_z = f"Source Z coordinate ({z} m) is out of model bounds."
             raise ValueError(msg_out_z)
 
         self.sources.append(((index_z, index_x), wavelet))
@@ -343,15 +363,48 @@ class Acoustic(BaseSimulation):
             scale = -self.density[i, j] * (self.velocity[i, j] * self.dt) ** 2
             u[tp1, i, j] += scale * src(iteration * self.dt)
 
+    def automatic_cutoff(self, frame=-1, percentile=99):
+        """
+        Calculate a cutoff value based on the percentile of the wavefield amplitude.
+
+        Parameters
+        ----------
+        frame : int
+            The time frame for which to calculate the cutoff. Default is the last one (-1).
+        percentile : float
+            The percentile to use.
+
+        Returns
+        -------
+        cutoff : float
+            The pressure value corresponding to the chosen percentile.
+        """
+        with xr.open_dataset(
+            self.cachefile, engine="h5netcdf", phony_dims="sort"
+        ) as ds:
+            if frame < 0:
+                frame = ds["pressure"].shape[0] + frame
+
+        abs_data = np.abs(
+            np.nan_to_num(
+                ds["pressure"].isel(time=frame).values.astype(np.float32), nan=0.0
+            )
+        )
+
+        if np.max(abs_data) == 0:
+            return 1.0
+
+        return float(np.percentile(abs_data, percentile))
+
     def _plot_snapshot(self, frame, **kwargs):
         """
         Plot a given frame as an image.
         """
         ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
         if frame < 0:
-            frame = ds["panels"].shape[0] + frame
+            frame = ds["pressure"].shape[0] + frame
 
-        data = ds["panels"].isel(time=frame).values.astype(np.float32)
+        data = ds["pressure"].isel(time=frame).values.astype(np.float32)
         data = np.nan_to_num(data, nan=0.0)
 
         if "cutoff" in kwargs:
@@ -385,7 +438,7 @@ class Acoustic(BaseSimulation):
         cutoff=None,
         ax=None,
         cmap=plt.cm.seismic,
-        embed=False,
+        embed=True,
         fps=10,
         dpi=70,
         **kwargs,
@@ -430,7 +483,7 @@ class Acoustic(BaseSimulation):
         with xr.open_dataset(
             self.cachefile, engine="h5netcdf", phony_dims="sort"
         ) as ds:
-            anim_data = ds["panels"][0::every, :, :].values.astype(np.float32)
+            anim_data = ds["pressure"][0::every, :, :].values.astype(np.float32)
 
         def plot(i):
             it = i * every
@@ -458,6 +511,121 @@ class Acoustic(BaseSimulation):
         spacing = min([(x2 - x1) / (nx - 1), (z2 - z1) / (nz - 1)])
         # Be conservative and use 0.6x the recommended value
         return 0.6 * 0.606 * spacing / self.velocity.max()
+
+    def test_animate(
+        self,
+        num=1,
+        every=1,
+        cutoff="auto",
+        percentile=99,
+        ax=None,
+        cmap="seismic",
+        embed=True,
+        fps=10,
+        dpi=70,
+        **kwargs,
+    ):
+        """
+        Create a 2D animation using physical axes (meters) and pressure in Pa.
+        """
+        if ax is None:
+            plt.figure(facecolor="white")
+            ax = plt.subplot(111)
+            ax.set_xlabel("x (m)")
+            ax.set_ylabel("z (m)")
+
+        fig = ax.get_figure()
+        nz, nx = self.shape
+        dx, dz = self.dx, self.dz
+
+        aspect = min(self.shape) / max(self.shape)
+        if nx > nz:
+            width = 10
+            height = width * aspect * 0.8
+        else:
+            height = 10
+            width = height * aspect * 1.5
+
+        fig.set_size_inches(width, height)
+        extent = [0, nx * dx, -(nz * dz), 0]
+
+        # Background model plot
+        background_cmap = plt.get_cmap("Set3", len(np.unique(self.density)))
+
+        # Background density
+        ax.imshow(self.density, extent=extent, cmap=background_cmap, origin="upper")
+
+        # Legend with color-coded patches
+        patches = [
+            mpatches.Patch(
+                color=background_cmap(i), label=f"Layer {i + 1}: {int(dens)} kg/m³"
+            )
+            for i, dens in enumerate(np.unique(self.density))
+        ]
+        ax.legend(
+            handles=patches,
+            loc="upper right",
+            title="Density layers",
+            framealpha=0.9,
+            fontsize="small",
+            title_fontsize="small",
+        )
+
+        # Plot the layer boundaries
+        z_col = self.density[:, 0]
+        interfaces_idx = np.where(np.diff(z_col) != 0)[0]
+
+        for idx in interfaces_idx:
+            # + 1 corrects the lag generated by np.diff
+            depth = -((idx + 1) * dz)
+            ax.axhline(
+                depth, color="firebrick", linestyle="--", linewidth=1.5, alpha=0.8
+            )
+
+        # Set the wave colormap with transparency
+        base_cmap = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
+
+        # The colors array has 256 rows and 4 columns. The columns represent R (red), G (green), B (blue), and A (alpha/opacity).
+        colors = base_cmap(np.linspace(0, 1, 256))
+
+        # Set zero pressure to transparent to reveal the background, and use a 0.6 exponent to highlight weak reflections without amplifying numerical noise
+        colors[:, -1] = np.abs(np.linspace(-1, 1, 256)) ** (num / 10)
+        transparent_cmap = mcolors.ListedColormap(colors)
+
+        imshow_args = {"cmap": transparent_cmap}
+        if cutoff is not None:
+            if cutoff == "auto":
+                cutoff = self.automatic_cutoff(percentile=percentile)
+            imshow_args["vmin"] = -cutoff
+            imshow_args["vmax"] = cutoff
+
+        # Animation
+        wavefield = ax.imshow(
+            np.zeros(self.shape, dtype=np.float32), extent=extent, **imshow_args
+        )
+
+        fig.colorbar(wavefield, pad=0.02, aspect=30).set_label("Pressure (Pa)")
+        frames = self.simsize // every
+
+        with xr.open_dataset(
+            self.cachefile, engine="h5netcdf", phony_dims="sort"
+        ) as ds:
+            anim_data = ds["pressure"][0::every, :, :].values.astype(np.float32)
+
+        def plot(i):
+            it = i * every
+            ax.set_title(f"t = {it * self.dt:.3f} s")
+            wavefield.set_array(anim_data[i])
+            return wavefield
+
+        anim = animation.FuncAnimation(fig, plot, frames=frames, **kwargs)
+
+        if embed:
+            video = anim_to_html(anim, fps=fps, dpi=dpi)
+            return video
+
+        plt.show()
+        return anim
 
 
 @numba.jit(nopython=True)
@@ -594,17 +762,17 @@ def scalar_maxdt(area, shape, maxvel):
 
     Parameters
     ----------
-    * area : [xmin, xmax, zmin, zmax]
+    area : [xmin, xmax, zmin, zmax]
         The x, z limits of the simulation area, e.g., the shallowest point is
         at zmin, the deepest at zmax.
-    * shape : (nz, nx)
+    shape : (nz, nx)
         The number of nodes in the finite difference grid
-    * maxvel : float
+    maxvel : float
         The maximum velocity in the medium
 
     Returns
     -------
-    * maxdt : float
+    maxdt : float
         The maximum time step
     """
     x1, x2, z1, z2 = area

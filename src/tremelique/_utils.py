@@ -259,7 +259,7 @@ def homogeneous_model(region, spacing, properties=None, **kwargs):
     model = model.assign_coords(z=-model.z)
 
     model["x"].attrs["units"] = "m"
-    model["x"].attrs["long_name"] = "horizotal"
+    model["x"].attrs["long_name"] = "horizontal"
     model["z"].attrs["units"] = "m"
     model["z"].attrs["long_name"] = "vertical"
     model["velocity"].attrs["units"] = "m/s"
