@@ -43,7 +43,7 @@ jobs:
         run: git fetch origin 'refs/tags/*:refs/tags/*'
 
       - name: Setup Python
-        uses: actions/setup-python@b319fb66c6d6789146dbda193dfec25275cb6064 # 5.4.0
+        uses: actions/setup-python@v5 
         with:
           python-version: "3.12"
 
@@ -92,7 +92,7 @@ jobs:
 
       # Fetch the built archives from the "build" job
       - name: Download built archives artifact
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d1c # v4.1.8
+        uses: actions/download-artifact@v4 # v4.1.8
         with:
           name: pypi-${{ github.sha }}
           path: dist

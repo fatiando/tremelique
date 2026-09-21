@@ -9,10 +9,10 @@ Base class for 2D finite-difference simulations.
 """
 
 import abc
-import atexit
 import contextlib
 import tempfile
 import warnings
+import weakref
 from pathlib import Path
 
 import h5netcdf
@@ -41,12 +41,12 @@ class BaseSimulation(abc.ABC):
 
     Attributes
     ----------
-    * simsize: int
+    simsize: int
         Number of iterations that has been run.
-    * cachefile: str
+    cachefile: str
         The hdf5 cachefile file path where the simulation is stored.
-    * shape: tuple
-        2D panel numpy.shape without padding.
+    shape: tuple
+        2D wavefield shape without padding as (nz, nx).
 
     """
 
@@ -77,19 +77,21 @@ class BaseSimulation(abc.ABC):
         self.taper = taper
         self.dt = dt
 
-    @atexit.register
-    def _delete_tmp_cache(self):
+        weakref.finalize(self, self._delete_tmp_cache, self.cachefile, self._temp_cache)
+
+    @staticmethod
+    def _delete_tmp_cache(cachefile_path, is_temp):
         """
         Clear the temporary cache file when the object is destroyed.
         """
-        if self._temp_cache and Path(self.cachefile).exists():
+        if is_temp and Path(cachefile_path).exists():
             try:
-                Path(self.cachefile).unlink()
+                Path(cachefile_path).unlink()
             except FileNotFoundError:
                 pass
             except Exception as e:
                 msg_temp_file = (
-                    f"Error! Failed to delete temporary file {self.cachefile}: {e}."
+                    f"Error! Failed to delete temporary file {cachefile_path}: {e}."
                 )
                 warnings.warn(msg_temp_file, RuntimeWarning, stacklevel=2)
 
@@ -99,8 +101,8 @@ class BaseSimulation(abc.ABC):
 
         Returns
         -------
-        * _create_tmp_cache: str
-            The name of the file created.
+        path : str
+            The absolute path of the temporary file created.
 
         """
         directory = Path.cwd()
@@ -121,24 +123,25 @@ class BaseSimulation(abc.ABC):
             path = tmpfile.name
         return path
 
+    @staticmethod
     @abc.abstractmethod
     def from_cache(fname, verbose=True):
         pass
 
     @abc.abstractmethod
-    def _init_panels(self):
+    def _init_wavefield(self):
         pass
 
     @abc.abstractmethod
-    def _init_cache(self, npanels, chunks=None, compression="lzf", shuffle=True):
+    def _init_cache(self, num_steps):
         pass
 
     @abc.abstractmethod
-    def _expand_cache(self, npanels):
+    def _expand_cache(self, num_steps):
         pass
 
     @abc.abstractmethod
-    def _cache_panels(self, npanels, tp1, iteration, simul_size):
+    def _cache_wavefield(self, u, tp1, iteration, simul_size):
         pass
 
     def _get_cache(self, mode="r"):
@@ -168,7 +171,7 @@ class BaseSimulation(abc.ABC):
     @abc.abstractmethod
     def __getitem__(self, index):
         """
-        Get an iteration of the panels object from the hdf5 cache file.
+        Get an iteration of the pressure field object from the hdf5 cache file.
         """
 
     @abc.abstractmethod
@@ -235,13 +238,13 @@ class BaseSimulation(abc.ABC):
             aspect /= ax.get_aspect()
 
         if nx > nz:
-            widht = 10
-            height = widht * aspect * 0.8
+            width = 10
+            height = width * aspect * 0.8
         else:
             height = 8
-            widht = height * aspect * 1.5
+            width = height * aspect * 1.5
 
-        fig.set_size_inches(widht, height)
+        fig.set_size_inches(width, height)
         plt.tight_layout()
 
         if raw or embed:
@@ -284,7 +287,7 @@ class BaseSimulation(abc.ABC):
         return widget
 
     @abc.abstractmethod
-    def _timestep(self, panels, tm1, t, tp1, iteration):
+    def _timestep(self, u, tm1, t, tp1, iteration):
         """
         Run the simulation forward one step in time.
         """
@@ -295,14 +298,14 @@ class BaseSimulation(abc.ABC):
 
         Parameters
         ----------
-        * iterations: int
+        iterations : int
             Number of time step iterations to run.
         """
         # Calls the following abstract methods: `_init_cache`, `_expand_cache`,
-        # `_init_panels` and `_cache_panels` and  `_time_step`. All of them
+        # `_init_wavefield` and `_cache_wavefield` and  `_time_step`. All of them
         # must be implemented in the child classes.
 
-        u = self._init_panels()  # panels must be created first
+        u = self._init_wavefield()  # pressure must be created first
 
         # Initialize the cache on the first run
         if self.simsize == 0:
@@ -314,13 +317,16 @@ class BaseSimulation(abc.ABC):
         if self.verbose:
             iterator = rich.progress.track(iterator)
 
-        for iteration in iterator:
-            t, tm1 = iteration % 2, (iteration + 1) % 2
-            tp1 = tm1
+        with h5netcdf.File(self.cachefile, mode="a") as f:
+            for iteration in iterator:
+                t, tm1 = iteration % 2, (iteration + 1) % 2
+                tp1 = tm1
 
-            self.it += 1
-            self._timestep(u, tm1, t, tp1, self.it)
-            self.simsize += 1
+                self.it += 1
+                self._timestep(u, tm1, t, tp1, self.it)
+                self.simsize += 1
 
-            #  won't this make it slower than it should? I/O
-            self._cache_panels(u, tp1, self.it, self.simsize)
+                self._cache_wavefield(f, u, tp1, self.it, self.simsize)
+
+                if self.it % 100 == 0:
+                    f.flush()

@@ -10,6 +10,11 @@ These are the functions and classes that make up the Tremelique API.
 
 from ._acoustic import Acoustic
 from ._utils import (
+    add_dipping_fault,
+    add_horizontal_fault,
+    add_layer,
+    add_layers,
+    add_vertical_fault,
     homogeneous_model,
     layered_model,
 )

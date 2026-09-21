@@ -70,7 +70,7 @@ jobs:
         run: git fetch origin 'refs/tags/*:refs/tags/*'
 
       - name: Setup Python
-        uses: actions/setup-python@b319fb66c6d6789146dbda193dfec25275cb6064 # v5.4.0
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
 
@@ -149,7 +149,7 @@ jobs:
           # to be able to push to GitHub.
           persist-credentials: false
 
-      - uses: actions/setup-python@b319fb66c6d6789146dbda193dfec25275cb6064 # v5.4.0
+      - uses: actions/setup-python@v5 
         with:
           # Use latest Python, so it understands all syntax.
           python-version: "3.13"
@@ -164,7 +164,7 @@ jobs:
           path: ${{ steps.pip-cache.outputs.dir }}
           key: ${{ runner.os }}-pip-coverage
 
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d1c # v4.1.8
+      - uses: actions/download-artifact@v4 # v4.1.8
         with:
           pattern: coverage_*
           # If true, the downloaded artifacts will be in the same directory
