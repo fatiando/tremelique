@@ -105,7 +105,7 @@ jobs:
 
       # Store the docs as a build artifact so we can deploy it later
       - name: Upload HTML documentation as an artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1 # v4.6.1
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
         with:
           name: docs-${{ github.sha }}
           path: doc/_build/html
