@@ -14,7 +14,6 @@ from pathlib import Path
 
 import h5netcdf
 import matplotlib.colors as mcolors
-import matplotlib.patches as mpatches
 import numba
 import numpy as np
 import xarray as xr
@@ -362,7 +361,7 @@ class Acoustic(BaseSimulation):
             scale = -self.density[i, j] * (self.velocity[i, j] * self.dt) ** 2
             u[tp1, i, j] += scale * src(iteration * self.dt)
 
-    def automatic_cutoff(self, frame="auto", percentile=99):
+    def automatic_cutoff(self, frame="auto", percentile=94):
         """
         Calculate a cutoff value based on the percentile of the wavefield amplitude.
 
@@ -411,111 +410,21 @@ class Acoustic(BaseSimulation):
 
         return float(data_slice.quantile(percentile / 100).item())
 
-    def _plot_snapshot(self, frame, **kwargs):
+    def _plot_snapshot(self, frame, alpha=1, bg="Set3", cutoff="auto", percentile=94, cmap="seismic", **kwargs):
         """
         Plot a given frame as an image.
         """
-        ds = xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort")
-        if frame < 0:
-            frame = ds["pressure"].shape[0] + frame
+        with xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort") as ds:
+            if frame < 0:
+                frame = ds["pressure"].shape[0] + frame
+            data = ds["pressure"].isel(time=frame).values.astype(np.float32)
 
-        data = ds["pressure"].isel(time=frame).values.astype(np.float32)
         data = np.nan_to_num(data, nan=0.0)
 
-        if "cutoff" in kwargs:
-            scale = kwargs.pop("cutoff")
-        else:
-            scale = float(np.nanmax(np.abs(data)))
-            if scale == 0:
-                scale = 1.0
-
-        ds.close()
-
-        nz, nx = self.shape
-        width = nx * self.dx
-        height = nz * self.dz
-
-        if "extent" not in kwargs:
-            kwargs["extent"] = [0, width, -height, 0]  # [xmin, xmax, zmax, zmin]
-
-        if "cmap" not in kwargs:
-            kwargs["cmap"] = "seismic"
-
         ax = plt.gca()
-        im = ax.imshow(data, vmin=-scale, vmax=scale, **kwargs)
-
-        if not ax.images or len(ax.images) == 1:
-            plt.colorbar(im, ax=ax, pad=0.02, aspect=30).set_label("Pressure (Pa)")
-
-    def animate(
-        self,
-        every=1,
-        cutoff=None,
-        ax=None,
-        cmap=plt.cm.seismic,
-        embed=True,
-        fps=10,
-        dpi=70,
-        **kwargs,
-    ):
-        """
-        Create a 2D animation equivalent to animate, but using physical axes (meters) and pressure in Pa.
-        """
-        if ax is None:
-            plt.figure(facecolor="white")
-            ax = plt.subplot(111)
-            ax.set_xlabel("x (m)")
-            ax.set_ylabel("z (m)")
-
         fig = ax.get_figure()
-        nz, nx = self.shape
-        dx, dz = self.dx, self.dz
-
-        aspect = min(self.shape) / max(self.shape)
-        if nx > nz:
-            width = 10
-            height = width * aspect * 0.8
-        else:
-            height = 10
-            width = height * aspect * 1.5
-
-        fig.set_size_inches(width, height)
-
-        imshow_args = {"cmap": cmap}
-        if cutoff is not None:
-            imshow_args["vmin"] = -cutoff
-            imshow_args["vmax"] = cutoff
-
-        extent = [0, nx * dx, -(nz * dz), 0]
-
-        wavefield = ax.imshow(
-            np.zeros(self.shape, dtype=np.float32), extent=extent, **imshow_args
-        )
-
-        fig.colorbar(wavefield, pad=0.02, aspect=30).set_label("Pressure (Pa)")
-        frames = self.simsize // every
-
-        with xr.open_dataset(
-            self.cachefile, engine="h5netcdf", phony_dims="sort"
-        ) as ds:
-            anim_data = ds["pressure"][0::every, :, :].values.astype(np.float32)
-
-        def plot(i):
-            it = i * every
-            ax.set_title(f"t = {it * self.dt:.3f} s")
-            wavefield.set_array(anim_data[i])
-            return wavefield
-
-        anim = animation.FuncAnimation(fig, plot, frames=frames, **kwargs)
-
-        if embed:
-            video = anim_to_html(anim, fps=fps, dpi=dpi)
-            ds.close()
-            return video
-
-        plt.show()
-        ds.close()
-        return anim
+        
+        self._setup_plot(ax=ax, data=data, alpha=alpha, bg=bg, cutoff=cutoff, percentile=percentile, cmap=cmap, frame_cutoff=frame, **kwargs)
 
     def maxdt(self):
         """
@@ -527,13 +436,13 @@ class Acoustic(BaseSimulation):
         # Be conservative and use 0.6x the recommended value
         return 0.6 * 0.606 * spacing / self.velocity.max()
 
-    def test_animate(
+    def animate(
         self,
         alpha=1,
         every=1,
         bg="Set3",
         cutoff="auto",
-        percentile=99,
+        percentile=94,
         ax=None,
         cmap="seismic",
         embed=True,
@@ -557,126 +466,24 @@ class Acoustic(BaseSimulation):
         dx, dz = self.dx, self.dz
 
         aspect = min(self.shape) / max(self.shape)
+
         if nx > nz:
             width = 10
             height = width * aspect * 0.8
         else:
-            height = 10
+            height = 8
             width = height * aspect * 1.5
 
         fig.set_size_inches(width, height)
-        extent = [0, nx * dx, -(nz * dz), 0]
-
-        # Background model plot
-        # Suporta até 12 cores bem definidas
-
-        impedance = self.velocity * self.density
-        _, index = np.unique(np.round(impedance, decimals=0), return_index=True)
-        background_cmap = plt.get_cmap(
-            str(bg), min(len(np.unique(np.round(impedance, decimals=0))), 12)
-        )
-
-        # Background density
-        ax.imshow(impedance, extent=extent, cmap=background_cmap, origin="upper")
-
-        idx_dens = self.density.flatten()
-        idx_vel = self.velocity.flatten()
-
-        # Legend with color-coded patches
-        patches = [
-            mpatches.Patch(
-                color=background_cmap(i),
-                label=f"Layer {i + 1}: ρ: {idx_dens[idx]:.0f} kg/m³ | v: {idx_vel[idx]:.0f} m/s",  # noqa: RUF001
-            )
-            for i, idx in enumerate(index)
-        ]
-        ax.legend(
-            handles=patches,
-            loc="upper right",
-            title="Properties",
-            framealpha=0.9,
-            fontsize="x-small",
-            title_fontsize="small",
-        )
-
-        """
-        # Plot the layer boundaries
-        z_col = self.density[:, 0]
-        interfaces_idx = np.where(np.diff(z_col) != 0)[0]
-           
-        for idx in interfaces_idx:
-            # + 1 corrects the lag generated by np.diff
-            depth = -((idx + 1) * dz)
-            ax.axhline(
-                depth, 
-                color='black', 
-                linestyle='--', 
-                linewidth=1.5, 
-                alpha=0.8
-            )
-        """
-
-        if "vertical_faults" in self.model.attrs:
-            for x_fault in self.model.attrs["vertical_faults"]:
-                ax.axvline(
-                    x=x_fault, color="white", linestyle=":", linewidth=1.5, alpha=0.6
-                )
-
-        if "horizontal_faults" in self.model.attrs:
-            for z_fault in self.model.attrs["horizontal_faults"]:
-                ax.axhline(
-                    y=-z_fault, color="white", linestyle=":", linewidth=1.5, alpha=0.6
-                )
-
-        if "dipping_faults" in self.model.attrs:
-            for fault in self.model.attrs["dipping_faults"]:
-                x0 = fault["x0"]
-                dip_rad = np.radians(fault["dip"])
-
-                max_depth = nz * dz
-
-                # z = (x - x0) * tan(dip)  =>  x = x0 + z / tan(dip)
-                x_end = x0 + (max_depth / np.tan(dip_rad))
-
-                ax.plot(
-                    [x0, x_end],
-                    [0, -max_depth],
-                    color="red",
-                    linestyle="-.",
-                    linewidth=2.0,
-                    alpha=0.8,
-                )
-
-        base_cmap = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
-
-        # The colors array has 256 rows and 4 columns. The columns represent R (red), G (green), B (blue), and A (alpha/opacity).
-        colors = base_cmap(np.linspace(0, 1, 256))
-
-        # Apply exponential transparency to highlight wave peaks and mute noise
-        colors[:, -1] = np.abs(np.linspace(-1, 1, 256)) ** (alpha)
-        colors[127:129, -1] = 0.0  # Ensures center point is 100% transparent
-        transparent_cmap = mcolors.ListedColormap(colors)
-
-        imshow_args = {"cmap": transparent_cmap}
-        if cutoff is not None:
-            if cutoff == "auto":
-                cutoff = self.automatic_cutoff(percentile=percentile)
-            imshow_args["vmin"] = -cutoff
-            imshow_args["vmax"] = cutoff
-
-        # Animation
-        wavefield = ax.imshow(
-            np.zeros(self.shape, dtype=np.float32), extent=extent, **imshow_args
-        )
-
-        fig.colorbar(wavefield, pad=0.02, aspect=30).set_label("Pressure (Pa)")
+        
+        wavefield = self._setup_plot(ax=ax, data=np.zeros(self.shape, dtype=np.float32), alpha=alpha, bg=bg, cutoff=cutoff, percentile=percentile, cmap=cmap, frame_cutoff="auto",)
+        
+        fig.tight_layout()
         frames = self.simsize // every
 
-        with xr.open_dataset(
-            self.cachefile, engine="h5netcdf", phony_dims="sort"
-        ) as ds:
+        with xr.open_dataset(self.cachefile, engine="h5netcdf", phony_dims="sort") as ds:
             anim_data = ds["pressure"][0::every, :, :].values.astype(np.float32)
-
+        
         def plot(i):
             it = i * every
             ax.set_title(f"t = {it * self.dt:.3f} s")
@@ -692,6 +499,141 @@ class Acoustic(BaseSimulation):
         plt.show()
         return anim
 
+    def _setup_plot(self, ax, data, alpha=1, bg="Set3", cutoff="auto", percentile=94, cmap="seismic", frame_cutoff="auto", **kwargs):
+        """
+        Set up background model, faults, wavefield image, and colorbars.
+        """
+        fig = ax.get_figure()
+        nz, nx = self.shape
+        dx, dz = self.dx, self.dz
+        extent = kwargs.pop("extent", [0, nx * dx, -(nz * dz), 0])
+        # Background model plot
+        impedance = self.velocity * self.density
+        unique_impedance, index = np.unique(
+            np.round(impedance, decimals=0), return_index=True
+        )
+        n_layers = min(len(unique_impedance), 12)
+        background_cmap = plt.get_cmap(str(bg), n_layers)
+
+        layer_idx = np.searchsorted(unique_impedance, np.round(impedance, decimals=0))
+        
+        # BoundaryNorm
+        bounds = np.arange(n_layers + 1) - 0.5
+        norm = mcolors.BoundaryNorm(bounds, background_cmap.N)
+
+        # Background density
+        bg_im = ax.imshow(
+            layer_idx, extent=extent, cmap=background_cmap, norm=norm, origin="upper"
+        )
+
+        idx_dens = self.density.flatten()[index][:n_layers]
+        idx_vel = self.velocity.flatten()[index][:n_layers]
+        ticks = np.arange(n_layers)
+
+        if "faults" in self.model.attrs:
+            for fault in self.model.attrs["faults"]:
+                fault_type = fault.get("type")
+
+                if fault_type == "vertical":
+                    x_fault = fault["x"]
+                    ax.axvline(
+                        x=x_fault, color="red", linestyle="--", linewidth=1.4, alpha=0.6
+                    )
+
+                elif fault_type == "horizontal":
+                    z_fault = fault["z"]
+                    ax.axhline(
+                        y=-z_fault,
+                        color="red",
+                        linestyle="--",
+                        linewidth=1.4,
+                        alpha=0.6,
+                    )
+
+                elif fault_type == "dipping":
+                    xmin, xmax = fault["xmin"], fault["xmax"]
+                    zmin,zmax = fault["zmin"],fault["zmax"]
+                    dip = np.radians(abs(fault["dip"]))
+                    if zmax is None:
+                        zmax = nz * dz
+
+                    if dip >= 0:
+                        x_at_zmax = xmin + (zmax - zmin) / np.tan(dip)
+                        x_end = min(xmax, x_at_zmax)
+                        z_end = zmin + (x_end - xmin) * np.tan(dip)
+                        x0 = xmin
+                    else:
+                        x_at_zmax = xmax - (zmax - zmin) / np.tan(dip)
+                        x_end = max(xmin, x_at_zmax)
+                        z_end = zmin + (xmax - x_end) * np.tan(dip)
+                        x0 = xmax
+
+                    ax.plot(
+                        [x0, x_end],
+                        [-zmin, -z_end],
+                        color="red",
+                        linestyle="--",
+                        linewidth=1.5,
+                        alpha=0.6,
+                    )
+
+        base_cmap = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
+
+        # The colors array has 256 rows and 4 columns. The columns represent R (red), G (green), B (blue), and A (alpha/opacity).
+        colors = base_cmap(np.linspace(0, 1, 256))
+
+        # Apply exponential transparency to highlight wave peaks and mute noise
+        colors[:, -1] = np.abs(np.linspace(-1, 1, 256)) ** (alpha)
+        colors[127:129, -1] = 0.0  # Ensures center point is 100% transparent
+        transparent_cmap = mcolors.ListedColormap(colors)
+
+        imshow_args = {"cmap": transparent_cmap}
+        if cutoff is not None:
+            if cutoff == "auto":
+                cutoff = self.automatic_cutoff(frame="auto", percentile=percentile)
+            imshow_args["vmin"] = -cutoff
+            imshow_args["vmax"] = cutoff
+
+        # Animation
+        wavefield = ax.imshow(
+            data, extent=extent, **imshow_args
+        )
+
+        if len(fig.axes) == 1:
+
+        # Velocity and Density colorbar
+        # Density
+            cbar_model = fig.colorbar(
+                bg_im,
+                ax=ax,
+                orientation="vertical",
+                location="left",
+                ticks=ticks,
+                pad=0.15,
+                shrink=0.55,
+                aspect=50,
+            )
+            cbar_model.ax.yaxis.set_ticks_position("left")
+            cbar_model.ax.yaxis.set_label_position("left")
+            cbar_model.ax.set_yticklabels([f"{d:.0f}" for d in idx_dens], fontsize=10)
+            cbar_model.ax.set_ylabel("Density (kg/m³)", fontsize=11)
+
+            # Velocity
+            ax_vel = cbar_model.ax.secondary_yaxis("right")
+            ax_vel.set_yticks(ticks)
+            ax_vel.set_yticklabels([f"{v:.0f}" for v in idx_vel], fontsize=10)
+            ax_vel.set_ylabel("Velocity (m/s)", fontsize=11, labelpad=4)
+
+            cbar_model.ax.set_ylim(n_layers - 0.5, -0.5)
+
+            # Pressure
+            cbar_press = fig.colorbar(
+                wavefield, ax=ax, orientation="vertical", pad=0.03, shrink=0.55, aspect=50
+            )
+            cbar_press.set_label("Pressure (Pa)", fontsize=11)
+            cbar_press.ax.tick_params(labelsize=10)
+
+        return wavefield
 
 @numba.jit(nopython=True, parallel=True)
 def timestep_esg(u_tp1, u_t, u_tm1, x1, x2, z1, z2, dt, dx, dz, vel, dens):

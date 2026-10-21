@@ -471,6 +471,8 @@ def add_vertical_fault(model, x_fault, throw):
     model: xarray.Dataset
         The updated model with the applied fault.
     """
+    model = model.copy(deep=True)
+
     dz = model.attrs.get("dz", 1.0)
 
     # Operates on indices
@@ -513,9 +515,9 @@ def add_vertical_fault(model, x_fault, throw):
     model["velocity"].values = faulted_velocity
     model["density"].values = faulted_density
 
-    if "vertical_faults" not in model.attrs:
-        model.attrs["vertical_faults"] = []
-    model.attrs["vertical_faults"].append(x_fault)
+    if "faults" not in model.attrs:
+        model.attrs["faults"] = []
+    model.attrs["faults"].append({"type": "vertical", "x": x_fault})
 
     return model
 
@@ -540,6 +542,8 @@ def add_horizontal_fault(model, z_fault, shift):
     model: xarray.Dataset
         The updated model with the applied fault.
     """
+    model = model.copy(deep=True)
+
     dx = model.attrs.get("dx", 1.0)
 
     # Operates on indices
@@ -582,14 +586,14 @@ def add_horizontal_fault(model, z_fault, shift):
     model["velocity"].values = faulted_velocity
     model["density"].values = faulted_density
 
-    if "horizontal_faults" not in model.attrs:
-        model.attrs["horizontal_faults"] = []
-    model.attrs["horizontal_faults"].append(z_fault)
+    if "faults" not in model.attrs:
+        model.attrs["faults"] = []
+    model.attrs["faults"].append({"type": "horizontal", "z": z_fault})
 
     return model
 
 
-def add_dipping_fault(model, x_fault, dip_degrees, throw):
+def add_dipping_fault(model, position, dip_degrees, shift):
     """
     Apply a dipping normal fault to a stratified model.
 
@@ -609,70 +613,89 @@ def add_dipping_fault(model, x_fault, dip_degrees, throw):
     model: xarray.Dataset
         The updated model with the applied fault.
     """
+    model = model.copy(deep=True)
+    dx = model.attrs.get("dx", 1.0)
     dz = model.attrs.get("dz", 1.0)
-
-    # Operates on indices
-    shift_cells = int(np.round(throw / dz))
-
-    faulted_velocity = model["velocity"].values.copy()
-    faulted_density = model["density"].values.copy()
 
     x_coords = model.x.values
     z_coords = model.z.values
+    nz, nx = model["velocity"].shape
 
-    dip_rad = np.radians(dip_degrees)
+    if isinstance(position, (list, tuple)):
+        if len(position) == 2:
+            if dip_degrees >= 0:
+                xmin, zmax = position
+                xmax = x_coords[-1]
+            else:
+                xmax, zmax = position
+                xmin = x_coords[0]
+            zmin = 0.0
+        elif len(position) == 4:
+            xmin, xmax, zmin, zmax = position
+        # Erro fora de região
+    else:
+        if dip_degrees >= 0:
+            xmin = float(position)
+            xmax = x_coords[-1]
+        else:
+            xmin = x_coords[0]
+            xmax = float(position)
+        zmin = 0.0
+        zmax = None
+
+    original_faulted_velocity = model["velocity"].values
+    original_faulted_density = model["density"].values
+    faulted_velocity = original_faulted_velocity.copy()
+    faulted_density = original_faulted_density.copy()
+
+    dip_rad = np.radians(abs(dip_degrees))
+
+    shift_z = int(np.round(shift / dz))  # Operates on indices
+    direction = 1 if dip_degrees >= 0 else -1
+    shift_x = int(np.round((shift / np.tan(dip_rad)) / dx)) * direction
+
+    zmin_idx = np.argmin(np.abs(z_coords - (-zmin)))
+    zmax_idx = np.argmin(np.abs(z_coords - (-zmax))) if zmax is not None else nz
 
     for col_idx, x in enumerate(x_coords):
         # Assuming the fault dips to the right
-        if x >= x_fault:
+        if xmin <= x <= xmax:
             # Calculate depth of the fault plane for this column
             # Using negative values to match the model's z coordinates
-            z_fault = -((x - x_fault) * np.tan(dip_rad))
+            if dip_degrees >= 0:
+                z_fault = -zmin - ((x - xmin) * np.tan(dip_rad))
+            else:
+                z_fault = -zmin - ((xmax - x) * np.tan(dip_rad))
 
             # Find the nearest Z index for the fault plane
             z_idx = np.argmin(np.abs(z_coords - z_fault))
+            limit_idx = min(z_idx, zmax_idx)
 
-            faulted_velocity[:, col_idx] = np.roll(
-                faulted_velocity[:, col_idx], shift_cells
-            )
-            faulted_density[:, col_idx] = np.roll(
-                faulted_density[:, col_idx], shift_cells
-            )
+            source_col = np.clip(col_idx - shift_x, 0, nx - 1)
 
-            # If greater than 0, block moved down
-            if shift_cells > 0:
-                # Overwrite edge artifacts shifted to the top with the uppermost valid row
-                faulted_velocity[:shift_cells, col_idx] = faulted_velocity[
-                    shift_cells, col_idx
+            for r in range(zmin_idx, limit_idx):
+                source_row = np.clip(r - shift_z, 0, nz - 1)
+                faulted_velocity[r, col_idx] = original_faulted_velocity[
+                    source_row, source_col
                 ]
-                faulted_density[:shift_cells, col_idx] = faulted_density[
-                    shift_cells, col_idx
-                ]
-
-            # If less than 0, block moved up
-            elif shift_cells < 0:
-                # Overwrite edge artifacts shifted to the bottom with the lowermost valid row
-                faulted_velocity[shift_cells:, col_idx] = faulted_velocity[
-                    shift_cells - 1, col_idx
-                ]
-                faulted_density[shift_cells:, col_idx] = faulted_density[
-                    shift_cells - 1, col_idx
-                ]
-
-            # Restore the footwall (block below the fault plane) to its original state
-            if z_idx < len(z_coords):
-                faulted_velocity[z_idx:, col_idx] = model["velocity"].values[
-                    z_idx:, col_idx
-                ]
-                faulted_density[z_idx:, col_idx] = model["density"].values[
-                    z_idx:, col_idx
+                faulted_density[r, col_idx] = original_faulted_density[
+                    source_row, source_col
                 ]
 
     model["velocity"].values = faulted_velocity
     model["density"].values = faulted_density
 
-    if "dipping_faults" not in model.attrs:
-        model.attrs["dipping_faults"] = []
-    model.attrs["dipping_faults"].append({"x0": x_fault, "dip": dip_degrees})
+    if "faults" not in model.attrs:
+        model.attrs["faults"] = []
+    model.attrs["faults"].append(
+        {
+            "type": "dipping",
+            "xmin": xmin,
+            "xmax": xmax,
+            "zmin": zmin,
+            "zmax": zmax,
+            "dip": dip_degrees,
+        }
+    )
 
     return model
